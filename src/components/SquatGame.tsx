@@ -45,7 +45,7 @@ export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
         const SpeechRec = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
         if (SpeechRec) {
           const rec = new SpeechRec();
-          rec.lang = 'ko-KR';
+          rec.lang = 'en-US';
           rec.continuous = true;
           rec.interimResults = true;
           rec.onresult = (e: any) => {
@@ -77,7 +77,7 @@ export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
         }
         animId = requestAnimationFrame(loop);
       } catch (e) {
-        setStatus(`오류: ${e}`);
+        setStatus(`Error: ${e}`);
       }
     }
 

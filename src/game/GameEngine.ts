@@ -60,6 +60,7 @@ export class GameEngine {
   private prevT = 0;
   private scrollSpd = SCROLL_SPEED_INIT;
   private bobT = 0;
+  private poseDetected = false;
 
   // 키 입력
   private spacePressed = false;
@@ -128,6 +129,7 @@ export class GameEngine {
   // ── 외부에서 매 프레임 호출 ──────────────────────────────
   tick(allLandmarks: (NormalizedLandmark[] | null)[], video: HTMLVideoElement) {
     // 포즈 → 각 플레이어 감지기
+    this.poseDetected = allLandmarks.some(lms => lms !== null);
     allLandmarks.forEach((lms, i) => {
       if (!lms || i >= this.players.length) return;
       const angle = kneeAngle(lms);
@@ -320,7 +322,10 @@ export class GameEngine {
       ctx.fillStyle = '#96c8ff';
       ctx.font = '18px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Calibrating... try squatting', CAM_W / 2, H - 110);
+      const calibMsg = this.poseDetected
+        ? 'Calibrating... try squatting'
+        : 'Step back so your full body is visible';
+      ctx.fillText(calibMsg, CAM_W / 2, H - 110);
       ctx.fillStyle = '#dcdcdc';
       ctx.font = 'bold 22px sans-serif';
       ctx.fillText(`${Math.floor(prog * 100)}%`, CAM_W / 2, H - 55);
