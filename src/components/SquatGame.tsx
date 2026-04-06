@@ -13,7 +13,7 @@ const WASM_URL =
 export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef  = useRef<HTMLVideoElement>(null);
-  const [status, setStatus] = useState('MediaPipe 로딩 중...');
+  const [status, setStatus] = useState('Loading MediaPipe...');
   const [ready, setReady]   = useState(false);
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
 
     async function init() {
       try {
-        setStatus('포즈 모델 로딩 중...');
+        setStatus('Loading pose model...');
         const vision = await FilesetResolver.forVisionTasks(WASM_URL);
         landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
@@ -30,14 +30,14 @@ export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
           numPoses: numPlayers,
         });
 
-        setStatus('카메라 권한 요청 중...');
+        setStatus('Requesting camera...');
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 1280, height: 720, facingMode: 'user' },
         });
         videoRef.current!.srcObject = stream;
         await videoRef.current!.play();
 
-        setStatus('에셋 로딩 중...');
+        setStatus('Loading assets...');
         const engine = new GameEngine(canvasRef.current!, numPlayers);
         await engine.loadAssets();
 
@@ -50,7 +50,7 @@ export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
           rec.interimResults = true;
           rec.onresult = (e: any) => {
             for (let i = e.resultIndex; i < e.results.length; i++) {
-              if (e.results[i][0].transcript.includes('시작')) {
+              if (e.results[i][0].transcript.toLowerCase().includes('start')) {
                 engine.triggerStart();
               }
             }

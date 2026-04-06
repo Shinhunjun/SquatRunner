@@ -320,7 +320,7 @@ export class GameEngine {
       ctx.fillStyle = '#96c8ff';
       ctx.font = '18px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('보정 중... 스쿼트를 해보세요', CAM_W / 2, H - 110);
+      ctx.fillText('Calibrating... try squatting', CAM_W / 2, H - 110);
       ctx.fillStyle = '#dcdcdc';
       ctx.font = 'bold 22px sans-serif';
       ctx.fillText(`${Math.floor(prog * 100)}%`, CAM_W / 2, H - 55);
@@ -389,7 +389,7 @@ export class GameEngine {
       ctx.fillText('SQUAT RUNNER', GAME_W / 2, H / 2 - 50);
       ctx.fillStyle = '#b4d4b4';
       ctx.font = '26px sans-serif';
-      ctx.fillText('스쿼트 보정 중...', GAME_W / 2, H / 2 + 14);
+      ctx.fillText('Calibrating...', GAME_W / 2, H / 2 + 14);
       ctx.textAlign = 'left';
     } else if (this.state === 'ready') {
       this.drawReady();
@@ -473,7 +473,7 @@ export class GameEngine {
       }
 
       // 레인 레이블
-      const labels = ['서있기', '반스쿼트', '풀스쿼트'];
+      const labels = ['Standing', 'Half squat', 'Full squat'];
       ctx.fillStyle = col + '55';
       ctx.font = '15px sans-serif';
       ctx.textAlign = 'right';
@@ -615,7 +615,7 @@ export class GameEngine {
       drawHearts(GAME_W - 22 - 2 * 30, p.lives);
       ctx.fillStyle = '#3c8cff';
       ctx.font = '20px sans-serif';
-      ctx.fillText(`고기 ${p.meatCount}`, GAME_W / 2 + 110, 38);
+      ctx.fillText(`Meat x${p.meatCount}`, GAME_W / 2 + 110, 38);
     } else {
       const [p1, p2] = this.players;
       ctx.fillStyle = p1.color;
@@ -642,7 +642,7 @@ export class GameEngine {
     this.players.forEach((p, pi) => {
       if (now < p.invincibleUntil) {
         const rem = (p.invincibleUntil - now).toFixed(1);
-        const label = this.numPlayers > 1 ? `P${pi + 1} 무적` : '무적';
+        const label = this.numPlayers > 1 ? `P${pi + 1} Invincible` : 'Invincible';
         ctx.fillStyle = '#50ffc8';
         ctx.font = '22px sans-serif';
         ctx.textAlign = 'center';
@@ -654,7 +654,7 @@ export class GameEngine {
         ctx.fillStyle = `rgba(60,160,255,${a})`;
         ctx.font = 'bold 34px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`+50점! (${p.meatPopN}개)`, GAME_W / 2, H / 2 - 60 - pi * 42);
+        ctx.fillText(`+50pts! (x${p.meatPopN})`, GAME_W / 2, H / 2 - 60 - pi * 42);
         ctx.textAlign = 'left';
       }
     });
@@ -673,14 +673,14 @@ export class GameEngine {
       ctx.fillStyle = '#50dc50';
       ctx.font = 'bold 52px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('준비 완료!', GAME_W / 2, H / 2 - 100);
+      ctx.fillText('Ready!', GAME_W / 2, H / 2 - 100);
     }
 
     ctx.textAlign = 'center';
     const lines = [
-      [22, '#a0c8a0', '스쿼트로 트랙을 바꿔 고기를 모으세요!'],
-      [20, '#b49664', '어두운 구멍이 있는 트랙은 위험합니다!'],
-      [18, '#64c8c8', '낙하 후 2초간 무적 (여유롭게 이동)'],
+      [22, '#a0c8a0', 'Squat to switch tracks and collect meat!'],
+      [20, '#b49664', 'Dark gaps will make you fall — avoid them!'],
+      [18, '#64c8c8', '2 sec invincibility after each fall'],
     ] as const;
     lines.forEach(([size, color, text], i) => {
       ctx.fillStyle = color;
@@ -691,17 +691,17 @@ export class GameEngine {
     if (this.numPlayers > 1) {
       ctx.fillStyle = '#ffc83c';
       ctx.font = 'bold 24px sans-serif';
-      ctx.fillText(`★ ${this.numPlayers}인 플레이 ★`, GAME_W / 2, H / 2 + 68);
+      ctx.fillText(`★ ${this.numPlayers} Players ★`, GAME_W / 2, H / 2 + 68);
     }
 
     ctx.fillStyle = '#c8c8c8';
     ctx.font = 'bold 30px sans-serif';
-    ctx.fillText('[ Space ] 시작', GAME_W / 2, H / 2 + 100);
+    ctx.fillText('[ Space ] or say "Start"', GAME_W / 2, H / 2 + 100);
 
     if (this.best > 0) {
       ctx.fillStyle = '#b4b464';
       ctx.font = '22px sans-serif';
-      ctx.fillText(`최고 기록: ${this.best}점`, GAME_W / 2, H / 2 + 148);
+      ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 148);
     }
     ctx.textAlign = 'left';
   }
@@ -720,24 +720,24 @@ export class GameEngine {
       const p = this.players[0];
       ctx.fillStyle = '#dcdcdc';
       ctx.font = 'bold 40px sans-serif';
-      ctx.fillText(`점수: ${Math.floor(p.score)}`, GAME_W / 2, H / 2 - 28);
+      ctx.fillText(`Score: ${Math.floor(p.score)}`, GAME_W / 2, H / 2 - 28);
       ctx.fillStyle = '#3c8cff';
       ctx.font = '28px sans-serif';
-      ctx.fillText(`고기: ${p.meatCount}개`, GAME_W / 2, H / 2 + 30);
+      ctx.fillText(`Meat: x${p.meatCount}`, GAME_W / 2, H / 2 + 30);
     } else {
       this.players.forEach((p, i) => {
         ctx.fillStyle = p.color;
         ctx.font = 'bold 28px sans-serif';
-        ctx.fillText(`P${i + 1} 점수: ${Math.floor(p.score)}  고기: ${p.meatCount}개`, GAME_W / 2, H / 2 - 28 + i * 44);
+        ctx.fillText(`P${i + 1}  Score: ${Math.floor(p.score)}   Meat: x${p.meatCount}`, GAME_W / 2, H / 2 - 28 + i * 44);
       });
     }
 
     ctx.fillStyle = '#b4b464';
     ctx.font = '24px sans-serif';
-    ctx.fillText(`최고 기록: ${this.best}점`, GAME_W / 2, H / 2 + 80);
+    ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 80);
     ctx.fillStyle = '#a0a0a0';
     ctx.font = '24px sans-serif';
-    ctx.fillText('[ Space ] 다시 시작', GAME_W / 2, H / 2 + 118);
+    ctx.fillText('[ Space ] Play Again', GAME_W / 2, H / 2 + 118);
     ctx.textAlign = 'left';
   }
 }
