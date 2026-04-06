@@ -4,6 +4,8 @@ A web-based endless runner controlled entirely by your body — squat depth dete
 
 **[▶ Play Now](https://squat-runner-web.vercel.app)**
 
+> 🌐 https://squat-runner-web.vercel.app
+
 ---
 
 ## How to Play
