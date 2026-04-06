@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+python/__pycache__/
+python/*.task
+python/sprites/
+
+# claude / agents internal
+AGENTS.md
+CLAUDE.md
