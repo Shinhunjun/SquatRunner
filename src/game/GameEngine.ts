@@ -61,6 +61,7 @@ export class GameEngine {
   private scrollSpd = SCROLL_SPEED_INIT;
   private bobT = 0;
   private poseDetected = false;
+  private _squatDown = false;   // 스쿼트 내려갔는지 추적
 
   // 키 입력
   private spacePressed = false;
@@ -152,6 +153,22 @@ export class GameEngine {
       if (this.players.every(p => p.detector.calibrated)) this.state = 'ready';
       return;
     }
+
+    // ready / over 상태: 스쿼트 한 번 하면 시작
+    if (this.state === 'ready' || this.state === 'over') {
+      for (const p of this.players) {
+        if (!p.detector.calibrated) continue;
+        const norm = p.detector.smoothNorm;
+        if (norm < 0.45) this._squatDown = true;                   // 내려감
+        if (this._squatDown && norm > 0.72) {                       // 다시 올라옴
+          this._squatDown = false;
+          this.reset();
+          return;
+        }
+      }
+      return;
+    }
+
     if (this.state !== 'play') return;
 
     const now = performance.now() / 1000;
@@ -701,7 +718,7 @@ export class GameEngine {
 
     ctx.fillStyle = '#c8c8c8';
     ctx.font = 'bold 30px sans-serif';
-    ctx.fillText('[ Space ] or say "Start"', GAME_W / 2, H / 2 + 100);
+    ctx.fillText('Do one squat to start  /  [ Space ]', GAME_W / 2, H / 2 + 100);
 
     if (this.best > 0) {
       ctx.fillStyle = '#b4b464';
@@ -742,7 +759,7 @@ export class GameEngine {
     ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 80);
     ctx.fillStyle = '#a0a0a0';
     ctx.font = '24px sans-serif';
-    ctx.fillText('[ Space ] Play Again', GAME_W / 2, H / 2 + 118);
+    ctx.fillText('Do one squat to play again  /  [ Space ]', GAME_W / 2, H / 2 + 118);
     ctx.textAlign = 'left';
   }
 }

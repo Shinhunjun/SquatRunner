@@ -41,24 +41,6 @@ export default function SquatGame({ numPlayers = 1 }: { numPlayers?: number }) {
         const engine = new GameEngine(canvasRef.current!, numPlayers);
         await engine.loadAssets();
 
-        // 음성 인식 ("시작" 감지)
-        const SpeechRec = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
-        if (SpeechRec) {
-          const rec = new SpeechRec();
-          rec.lang = 'en-US';
-          rec.continuous = true;
-          rec.interimResults = true;
-          rec.onresult = (e: any) => {
-            for (let i = e.resultIndex; i < e.results.length; i++) {
-              if (e.results[i][0].transcript.toLowerCase().includes('start')) {
-                engine.triggerStart();
-              }
-            }
-          };
-          rec.onend = () => { try { rec.start(); } catch { /* ignore */ } };
-          try { rec.start(); } catch { /* ignore */ }
-        }
-
         setReady(true);
         setStatus('');
 
