@@ -109,6 +109,10 @@ export class GameEngine {
     if (this.audio) { this.audio.pause(); this.audio.currentTime = 0; }
   }
 
+  triggerStart() {
+    if (this.state === 'ready' || this.state === 'over') this.reset();
+  }
+
   reset() {
     this.challenges = [];
     this.meats = [];
@@ -290,15 +294,15 @@ export class GameEngine {
         const la = lms[a], lb = lms[b];
         if (!la || !lb || la.visibility < 0.5 || lb.visibility < 0.5) continue;
         ctx.beginPath();
-        ctx.moveTo(la.x * CAM_W, la.y * H);
-        ctx.lineTo(lb.x * CAM_W, lb.y * H);
+        ctx.moveTo((1 - la.x) * CAM_W, la.y * H);
+        ctx.lineTo((1 - lb.x) * CAM_W, lb.y * H);
         ctx.stroke();
       }
       ctx.fillStyle = dotColors[pi % 2];
       for (const lm of lms) {
         if (lm.visibility < 0.5) continue;
         ctx.beginPath();
-        ctx.arc(lm.x * CAM_W, lm.y * H, 4, 0, Math.PI * 2);
+        ctx.arc((1 - lm.x) * CAM_W, lm.y * H, 4, 0, Math.PI * 2);
         ctx.fill();
       }
     });
