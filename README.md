@@ -8,6 +8,12 @@ A web-based endless runner controlled entirely by your body — squat depth dete
 
 ---
 
+## Demo
+
+[![Demo Video](https://img.youtube.com/vi/6McBJmOlWaw/maxresdefault.jpg)](https://youtu.be/6McBJmOlWaw)
+
+---
+
 ## How to Play
 
 | Pose | Track |
