@@ -9,14 +9,32 @@ import {
 import { Challenge } from './Challenge';
 import { MeatItem } from './MeatItem';
 import { PlayerState } from './PlayerState';
+import { Boss, BOSS_W, BOSS_H } from './Boss';
+import { JunkFood, JUNK_SIZE, JUNK_HIT_RADIUS } from './JunkFood';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 type State = 'calib' | 'ready' | 'play' | 'over';
+
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: (event: SpeechRecognitionEventLike) => void;
+  onerror: () => void;
+  onend: () => void;
+  start: () => void;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: { [index: number]: { [index: number]: { transcript: string } }; length: number };
+}
 
 const SPR_NAMES = [
   'background', 'player', 'meat',
   'platform_green', 'platform_cyan', 'platform_red',
   'hole', 'heart', 'logo',
+  'boss_fatty_1', 'boss_fatty_2', 'boss_fatty_3',
+  'junk_burger', 'junk_chicken', 'junk_donut', 'junk_fries', 'junk_soda',
 ] as const;
 type SprName = typeof SPR_NAMES[number];
 
@@ -30,6 +48,14 @@ const ASSET_FILES: Record<SprName, string> = {
   hole:           '/img/dangerzone.png',
   heart:          '/img/heart-removebg-preview.png',
   logo:           '/img/GameTitle.png',
+  boss_fatty_1:   '/img/boss_fatty_1.png',
+  boss_fatty_2:   '/img/boss_fatty_2.png',
+  boss_fatty_3:   '/img/boss_fatty_3.png',
+  junk_burger:    '/img/junk_burger.png',
+  junk_chicken:   '/img/junk_chicken.png',
+  junk_donut:     '/img/junk_donut.png',
+  junk_fries:     '/img/junk_fries.png',
+  junk_soda:      '/img/junk_soda.png',
 };
 
 const SPR_SIZES: Record<SprName, [number, number]> = {
@@ -42,7 +68,27 @@ const SPR_SIZES: Record<SprName, [number, number]> = {
   hole:           [96, 28],
   heart:          [28, 26],
   logo:           [480, 100],
+  boss_fatty_1:   [BOSS_W, BOSS_H],
+  boss_fatty_2:   [BOSS_W, BOSS_H],
+  boss_fatty_3:   [BOSS_W, BOSS_H],
+  junk_burger:    [JUNK_SIZE, JUNK_SIZE],
+  junk_chicken:   [JUNK_SIZE, JUNK_SIZE],
+  junk_donut:     [JUNK_SIZE, JUNK_SIZE],
+  junk_fries:     [JUNK_SIZE, JUNK_SIZE],
+  junk_soda:      [JUNK_SIZE, JUNK_SIZE],
 };
+
+/** 레벨별 보스/정크푸드 난이도 */
+function getLevelConfig(level: number) {
+  return {
+    bossDistance: 3000 + (level - 1) * 1500,
+    bossHP: 100 + (level - 1) * 50,
+    junkFoodInterval: Math.max(0.4, 0.9 - (level - 1) * 0.08),
+    junkFoodSpeed: 280 + (level - 1) * 25,
+    /** 회피 한 번에 보스가 받는 데미지 */
+    damagePerDodge: Math.max(8, 25 - (level - 1) * 2),
+  };
+}
 
 export class GameEngine {
   private ctx: CanvasRenderingContext2D;
@@ -66,6 +112,16 @@ export class GameEngine {
   // 키 입력
   private spacePressed = false;
 
+  // 레벨 / 보스 시스템
+  private level = 1;
+  private phase: 'running' | 'boss' | 'victory' = 'running';
+  private levelDistance = 0;
+  private boss: Boss | null = null;
+  private junkFoods: JunkFood[] = [];
+  private nextJunkAt = 0;
+  private victoryT = 0;
+  private bossEntryT = 0;
+
   constructor(private canvas: HTMLCanvasElement, numPlayers = 1) {
     this.ctx = canvas.getContext('2d')!;
     this.numPlayers = numPlayers;
@@ -77,6 +133,38 @@ export class GameEngine {
         this.spacePressed = true;
       }
     });
+
+    this.startVoiceRecognition();
+  }
+
+  private startVoiceRecognition() {
+    const SR = (window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).SpeechRecognition ?? (window as unknown as {
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).webkitSpeechRecognition;
+    if (!SR) return;
+    try {
+      const recognition = new SR();
+      recognition.lang = 'en-US';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript.toLowerCase() + ' ';
+        }
+        if (transcript.includes('start')) {
+          this.triggerStart();
+        }
+      };
+      recognition.onerror = () => {};
+      recognition.onend = () => {
+        try { recognition.start(); } catch {}
+      };
+      recognition.start();
+    } catch {}
   }
 
   async loadAssets() {
@@ -118,13 +206,44 @@ export class GameEngine {
   reset() {
     this.challenges = [];
     this.meats = [];
+    this.junkFoods = [];
+    this.boss = null;
     this.players.forEach(p => p.reset());
     this.startT = performance.now() / 1000;
     this.prevT  = this.startT;
     this.scrollSpd = SCROLL_SPEED_INIT;
     this.bobT = 0;
+    this.level = 1;
+    this.phase = 'running';
+    this.levelDistance = 0;
+    this.victoryT = 0;
+    this.bossEntryT = 0;
+    this.nextJunkAt = 0;
     this.state = 'play';
     this.playMusic();
+  }
+
+  private startNextLevel() {
+    this.level++;
+    this.phase = 'running';
+    this.levelDistance = 0;
+    this.boss = null;
+    this.junkFoods = [];
+    this.victoryT = 0;
+    this.bossEntryT = 0;
+    this.scrollSpd = SCROLL_SPEED_INIT + (this.level - 1) * 20;
+    this.challenges = [];
+    this.meats = [];
+  }
+
+  private spawnBoss() {
+    const cfg = getLevelConfig(this.level);
+    this.boss = new Boss(this.level, cfg.bossHP);
+    this.phase = 'boss';
+    this.bossEntryT = performance.now() / 1000;
+    this.nextJunkAt = this.bossEntryT + 1.5;  // 등장 후 1.5초 뒤 첫 발
+    this.challenges = [];
+    this.junkFoods = [];
   }
 
   // ── 외부에서 매 프레임 호출 ──────────────────────────────
@@ -175,21 +294,57 @@ export class GameEngine {
     const dt  = Math.min(now - this.prevT, 0.05);
     this.prevT = now;
     const elapsed = now - this.startT;
-
-    this.scrollSpd = Math.min(SCROLL_SPEED_MAX, SCROLL_SPEED_INIT + elapsed * SCROLL_ACCEL);
-    const dx = this.scrollSpd * dt;
     this.bobT += dt;
+
+    // ── Phase: Victory (보스 쓰러진 후 2.5초 → 다음 레벨) ──
+    if (this.phase === 'victory') {
+      if (now - this.victoryT > 2.5) this.startNextLevel();
+      // 무적 / 죽음 처리만 계속 돌도록 짧게 리턴
+      this.tickPlayersLight();
+      return;
+    }
+
+    // ── Phase: Boss (스크롤 정지, 정크푸드 회피) ──
+    if (this.phase === 'boss') {
+      this.updateBossPhase(now, dt);
+      return;
+    }
+
+    // ── Phase: Running (기존 로직) ──
+    const baseSpd = SCROLL_SPEED_INIT + (this.level - 1) * 20;
+    this.scrollSpd = Math.min(SCROLL_SPEED_MAX, baseSpd + elapsed * SCROLL_ACCEL);
+    const dx = this.scrollSpd * dt;
+    this.levelDistance += dx;
 
     this.challenges.forEach(c => c.scroll(dx));
     this.meats.forEach(m => m.scroll(dx));
-    this.generate(Math.min(1, elapsed / 90));
+
+    // 보스 거리 도달 전까지만 새 챌린지 생성
+    const cfg = getLevelConfig(this.level);
+    const remaining = cfg.bossDistance - this.levelDistance;
+    if (remaining > 600) {
+      this.generate(Math.min(1, elapsed / 90));
+    }
     this.challenges = this.challenges.filter(c => !c.offScreen);
     this.meats      = this.meats.filter(m => !m.offScreen);
+
+    // 보스 등장 트리거: 거리 도달 + 화면에 남은 장애물 없음
+    if (this.levelDistance >= cfg.bossDistance && this.challenges.length === 0) {
+      this.spawnBoss();
+      return;
+    }
 
     for (const p of this.players) {
       if (!p.alive) continue;
       p.legPhase = (p.legPhase + dt * 9) % (Math.PI * 2);
       const lane = p.detector.lane;
+
+      // 스쿼트 카운트: 풀스쿼트(2) → 서있기/반스쿼트(0,1) 전환
+      if (p.prevLane === 2 && lane !== 2) {
+        p.squatCount++;
+        p.calories = p.squatCount * 0.32;
+      }
+      p.prevLane = lane;
 
       if (p.falling) {
         const fe = now - p.fallT;
@@ -226,6 +381,82 @@ export class GameEngine {
       this.best = Math.max(this.best, Math.max(...this.players.map(p => Math.floor(p.score))));
       this.state = 'over';
       this.stopMusic();
+    }
+  }
+
+  private updateBossPhase(now: number, dt: number) {
+    if (!this.boss) return;
+    const cfg = getLevelConfig(this.level);
+
+    // 정크푸드 스폰
+    if (this.boss.alive && now >= this.nextJunkAt) {
+      const lane = Math.floor(Math.random() * 3);
+      const [bx, by] = this.boss.throwOrigin();
+      const jf = new JunkFood(lane, bx, cfg.junkFoodSpeed);
+      jf.y = by;  // 보스 가슴 높이에서 출발해서 자체 lane y로 점차 이동? 단순화: 직선
+      this.junkFoods.push(jf);
+      this.nextJunkAt = now + cfg.junkFoodInterval;
+    }
+
+    // 정크푸드 업데이트
+    this.junkFoods.forEach(j => j.update(dt));
+
+    // 충돌 / 회피 처리
+    for (const j of this.junkFoods) {
+      if (j.hit || j.scored) continue;
+      for (const p of this.players) {
+        if (!p.alive) continue;
+        const dx = j.x - p.screenX;
+        const sameLane = p.detector.lane === j.lane;
+        // 플레이어 근접 시
+        if (Math.abs(dx) < JUNK_HIT_RADIUS) {
+          if (sameLane && now >= p.invincibleUntil && !p.falling) {
+            // 충돌 → 데미지
+            j.hit = true;
+            p.lives--;
+            p.hitT = now;
+            p.invincibleUntil = now + INVINCIBLE_DUR;
+            if (p.lives <= 0) p.alive = false;
+          }
+        }
+      }
+      // 플레이어 X를 지나치면 회피 성공 → 보스 데미지
+      if (!j.hit && j.x < this.players[0].screenX - JUNK_HIT_RADIUS - 10) {
+        j.scored = true;
+        this.boss.takeDamage(cfg.damagePerDodge);
+      }
+    }
+    this.junkFoods = this.junkFoods.filter(j => !j.offScreen && !j.hit);
+
+    // 플레이어 다리 애니메이션 / 죽음 처리
+    this.tickPlayersLight();
+
+    // 보스 처치 → victory
+    if (!this.boss.alive) {
+      this.phase = 'victory';
+      this.victoryT = now;
+    }
+
+    // 게임 오버 체크
+    if (this.players.every(p => !p.alive)) {
+      this.best = Math.max(this.best, Math.max(...this.players.map(p => Math.floor(p.score))));
+      this.state = 'over';
+      this.stopMusic();
+    }
+  }
+
+  /** 무적 / 다리 phase / 점수만 가볍게 업데이트 */
+  private tickPlayersLight() {
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      p.legPhase = (p.legPhase + 0.016 * 9) % (Math.PI * 2);
+      // 스쿼트 카운트는 boss/victory phase에서도 가능
+      const lane = p.detector.lane;
+      if (p.prevLane === 2 && lane !== 2) {
+        p.squatCount++;
+        p.calories = p.squatCount * 0.32;
+      }
+      p.prevLane = lane;
     }
   }
 
@@ -394,10 +625,14 @@ export class GameEngine {
     if (bg) ctx.drawImage(bg, 0, 0, GAME_W, H);
     else { ctx.fillStyle = '#0a0c14'; ctx.fillRect(0, 0, GAME_W, H); }
 
-    if (this.state === 'play' || this.state === 'over') {
+    if (this.state === 'play') {
       this.drawTracks();
       this.drawMeats();
+      if (this.boss) this.drawBoss();
+      if (this.junkFoods.length) this.drawJunkFoods();
       this.players.forEach(p => this.drawPlayer(p));
+      if (this.phase === 'running') this.drawFinishProgress();
+      if (this.phase === 'victory') this.drawVictory();
     }
 
     this.drawHUD();
@@ -593,6 +828,113 @@ export class GameEngine {
     }
   }
 
+  private drawBoss() {
+    if (!this.boss) return;
+    const { ctx } = this;
+    const now = performance.now() / 1000;
+    const sprKey = this.boss.spriteKey;
+    const spr = this.sprites[sprKey];
+
+    // 등장 슬라이드인 (0~0.6초)
+    const since = now - this.bossEntryT;
+    const slideT = Math.min(1, since / 0.6);
+    const targetX = this.boss.x;
+    const drawX = targetX + (1 - slideT) * 300;
+
+    // 데미지 받았을 때 살짝 흔들림
+    const shake = this.boss.alive ? 0 : Math.sin(now * 30) * 6;
+
+    if (spr) {
+      ctx.save();
+      ctx.translate(drawX + shake, this.boss.y);
+      ctx.drawImage(spr, 0, 0, BOSS_W, BOSS_H);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#a02828';
+      ctx.fillRect(drawX, this.boss.y, BOSS_W, BOSS_H);
+    }
+
+    // 보스 HP 바
+    const barW = 220, barH = 16;
+    const barX = this.boss.x + (BOSS_W - barW) / 2;
+    const barY = this.boss.y - 28;
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+    ctx.fillStyle = '#3c1010';
+    ctx.fillRect(barX, barY, barW, barH);
+    const hpRatio = this.boss.hp / this.boss.maxHp;
+    const grad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    grad.addColorStop(0, '#ff4040');
+    grad.addColorStop(1, '#ffb040');
+    ctx.fillStyle = grad;
+    ctx.fillRect(barX, barY, barW * hpRatio, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`FATTY  ${Math.ceil(this.boss.hp)} / ${this.boss.maxHp}`, barX + barW / 2, barY + 13);
+    ctx.textAlign = 'left';
+  }
+
+  private drawJunkFoods() {
+    const { ctx } = this;
+    for (const j of this.junkFoods) {
+      const sprKey = ('junk_' + j.type) as SprName;
+      const spr = this.sprites[sprKey];
+      ctx.save();
+      ctx.translate(j.x, j.y);
+      ctx.rotate(j.rotation);
+      if (spr) {
+        ctx.drawImage(spr, -JUNK_SIZE / 2, -JUNK_SIZE / 2, JUNK_SIZE, JUNK_SIZE);
+      } else {
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath();
+        ctx.arc(0, 0, JUNK_SIZE / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  private drawFinishProgress() {
+    const { ctx } = this;
+    const cfg = getLevelConfig(this.level);
+    const ratio = Math.min(1, this.levelDistance / cfg.bossDistance);
+    const barW = GAME_W * 0.6;
+    const barX = (GAME_W - barW) / 2;
+    const barY = 64;
+    const barH = 10;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+    ctx.fillStyle = '#1a3a1a';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#50dc50';
+    ctx.fillRect(barX, barY, barW * ratio, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Level ${this.level} → Boss ${Math.floor(ratio * 100)}%`, GAME_W / 2, barY + 9);
+    ctx.textAlign = 'left';
+  }
+
+  private drawVictory() {
+    const { ctx } = this;
+    const now = performance.now() / 1000;
+    const since = now - this.victoryT;
+    const alpha = Math.max(0, 1 - since / 2.5);
+    ctx.fillStyle = `rgba(0,0,0,${0.55 * alpha})`;
+    ctx.fillRect(0, 0, GAME_W, H);
+    ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+    ctx.font = 'bold 64px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('VICTORY!', GAME_W / 2, H / 2 - 30);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText(`Level ${this.level} Cleared`, GAME_W / 2, H / 2 + 20);
+    ctx.font = '20px sans-serif';
+    ctx.fillText(`Get ready for Level ${this.level + 1}...`, GAME_W / 2, H / 2 + 56);
+    ctx.textAlign = 'left';
+  }
+
   private drawHUD() {
     const { ctx } = this;
     ctx.fillStyle = 'rgba(18,20,28,0.85)';
@@ -623,21 +965,34 @@ export class GameEngine {
 
     if (this.numPlayers === 1) {
       const p = this.players[0];
+
+      ctx.fillStyle = '#ffd23c';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText(`LVL ${this.level}`, 10, 38);
+
       ctx.fillStyle = '#50dc50';
-      ctx.font = 'bold 26px monospace';
-      ctx.fillText(`SCORE  ${String(Math.floor(p.score)).padStart(6, '0')}`, 14, 40);
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText(`${String(Math.floor(p.score)).padStart(6, '0')}`, 80, 38);
+
+      ctx.fillStyle = '#ff7d3c';
+      ctx.font = 'bold 17px sans-serif';
+      ctx.fillText(`🔥 ${p.calories.toFixed(2)} kcal`, 200, 38);
+
+      ctx.fillStyle = '#a0e632';
+      ctx.fillText(`🦵 ${p.squatCount}`, 340, 38);
+
       if (this.state === 'play') {
         const spd = Math.floor(this.scrollSpd / SCROLL_SPEED_INIT * 100);
         ctx.fillStyle = '#c8c864';
-        ctx.font = '22px sans-serif';
+        ctx.font = '17px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`SPD ${spd}%`, GAME_W / 2, 38);
+        ctx.fillText(`SPD ${spd}%`, GAME_W / 2 + 80, 38);
         ctx.textAlign = 'left';
       }
-      drawHearts(GAME_W - 22 - 2 * 30, p.lives);
       ctx.fillStyle = '#3c8cff';
-      ctx.font = '20px sans-serif';
-      ctx.fillText(`Meat x${p.meatCount}`, GAME_W / 2 + 110, 38);
+      ctx.font = '17px sans-serif';
+      ctx.fillText(`BONES ${p.meatCount}`, GAME_W - 220, 38);
+      drawHearts(GAME_W - 22 - 2 * 30, p.lives);
     } else {
       const [p1, p2] = this.players;
       ctx.fillStyle = p1.color;
@@ -717,13 +1072,17 @@ export class GameEngine {
     }
 
     ctx.fillStyle = '#c8c8c8';
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillText('Do one squat to start  /  [ Space ]', GAME_W / 2, H / 2 + 100);
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText('🏋️ Do one squat to start  /  [ Space ]', GAME_W / 2, H / 2 + 100);
+
+    ctx.fillStyle = '#64c8ff';
+    ctx.font = '20px sans-serif';
+    ctx.fillText("🎤 Or say 'Start'", GAME_W / 2, H / 2 + 132);
 
     if (this.best > 0) {
       ctx.fillStyle = '#b4b464';
       ctx.font = '22px sans-serif';
-      ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 148);
+      ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 168);
     }
     ctx.textAlign = 'left';
   }
@@ -740,12 +1099,22 @@ export class GameEngine {
 
     if (this.numPlayers === 1) {
       const p = this.players[0];
+      ctx.fillStyle = '#ffd23c';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillText(`Reached Level ${this.level}`, GAME_W / 2, H / 2 - 60);
       ctx.fillStyle = '#dcdcdc';
-      ctx.font = 'bold 40px sans-serif';
-      ctx.fillText(`Score: ${Math.floor(p.score)}`, GAME_W / 2, H / 2 - 28);
+      ctx.font = 'bold 36px sans-serif';
+      ctx.fillText(`Score: ${Math.floor(p.score)}`, GAME_W / 2, H / 2 - 18);
       ctx.fillStyle = '#3c8cff';
-      ctx.font = '28px sans-serif';
-      ctx.fillText(`Meat: x${p.meatCount}`, GAME_W / 2, H / 2 + 30);
+      ctx.font = '22px sans-serif';
+      ctx.fillText(`Bones: x${p.meatCount}`, GAME_W / 2, H / 2 + 18);
+      ctx.fillStyle = '#ff7d3c';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText(
+        `Squats: ${p.squatCount} reps  |  Calories: ${p.calories.toFixed(2)} kcal`,
+        GAME_W / 2,
+        H / 2 + 54,
+      );
     } else {
       this.players.forEach((p, i) => {
         ctx.fillStyle = p.color;
@@ -755,11 +1124,14 @@ export class GameEngine {
     }
 
     ctx.fillStyle = '#b4b464';
-    ctx.font = '24px sans-serif';
-    ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 80);
+    ctx.font = '22px sans-serif';
+    ctx.fillText(`Best: ${this.best} pts`, GAME_W / 2, H / 2 + 92);
     ctx.fillStyle = '#a0a0a0';
-    ctx.font = '24px sans-serif';
-    ctx.fillText('Do one squat to play again  /  [ Space ]', GAME_W / 2, H / 2 + 118);
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('🏋️ Do one squat to play again  /  [ Space ]', GAME_W / 2, H / 2 + 130);
+    ctx.fillStyle = '#64c8ff';
+    ctx.font = '18px sans-serif';
+    ctx.fillText("🎤 Or say 'Start'", GAME_W / 2, H / 2 + 158);
     ctx.textAlign = 'left';
   }
 }

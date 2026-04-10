@@ -24,6 +24,10 @@ export class PlayerState {
   legPhase = 0;
   alive = true;
 
+  squatCount = 0;
+  calories = 0;
+  prevLane = 0;
+
   constructor(public idx: number) {
     this.screenX = PLAYER_SCREEN_X[idx] ?? 130;
     this.color   = PLAYER_COLORS[idx] ?? '#ffffff';
@@ -38,5 +42,8 @@ export class PlayerState {
     this.invincibleUntil = 0;
     this.legPhase = 0;
     this.alive = true;
+    this.squatCount = 0;
+    this.calories = 0;
+    this.prevLane = 0;
   }
 }
