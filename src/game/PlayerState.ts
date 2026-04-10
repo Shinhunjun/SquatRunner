@@ -26,7 +26,8 @@ export class PlayerState {
 
   squatCount = 0;
   calories = 0;
-  prevLane = 0;
+  /** rep 중 풀스쿼트(lane 2)까지 내려갔는지 — 다시 lane 0까지 올라와야 카운트 */
+  squatReachedBottom = false;
 
   constructor(public idx: number) {
     this.screenX = PLAYER_SCREEN_X[idx] ?? 130;
@@ -44,6 +45,6 @@ export class PlayerState {
     this.alive = true;
     this.squatCount = 0;
     this.calories = 0;
-    this.prevLane = 0;
+    this.squatReachedBottom = false;
   }
 }

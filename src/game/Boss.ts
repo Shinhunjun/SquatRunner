@@ -20,9 +20,9 @@ export class Boss {
     this.spriteKey =
       level <= 1 ? 'boss_fatty_1' :
       level <= 3 ? 'boss_fatty_2' : 'boss_fatty_3';
-    // 화면 중앙 하단 anchor
-    this.x = (GAME_W - BOSS_W) / 2;
-    this.y = H - BOSS_H - 60;
+    // 화면 오른쪽 끝, 세로 중앙 anchor
+    this.x = GAME_W - BOSS_W - 20;
+    this.y = (H - BOSS_H) / 2;
   }
 
   takeDamage(amount: number) {

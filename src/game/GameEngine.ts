@@ -365,12 +365,7 @@ export class GameEngine {
       p.legPhase = (p.legPhase + dt * 9) % (Math.PI * 2);
       const lane = p.detector.lane;
 
-      // 스쿼트 카운트: 풀스쿼트(2) → 서있기/반스쿼트(0,1) 전환
-      if (p.prevLane === 2 && lane !== 2) {
-        p.squatCount++;
-        p.calories = p.squatCount * 0.32;
-      }
-      p.prevLane = lane;
+      this.updateSquatCount(p, lane);
 
       if (p.falling) {
         const fe = now - p.fallT;
@@ -484,13 +479,25 @@ export class GameEngine {
     for (const p of this.players) {
       if (!p.alive) continue;
       p.legPhase = (p.legPhase + 0.016 * 9) % (Math.PI * 2);
-      // 스쿼트 카운트는 boss/victory phase에서도 가능
-      const lane = p.detector.lane;
-      if (p.prevLane === 2 && lane !== 2) {
-        p.squatCount++;
-        p.calories = p.squatCount * 0.32;
-      }
-      p.prevLane = lane;
+      this.updateSquatCount(p, p.detector.lane);
+    }
+  }
+
+  /**
+   * 스쿼트 rep 카운터 (상태 머신).
+   * 완전한 rep = 서있음(lane 0) → 풀스쿼트(lane 2) → 다시 서있음(lane 0).
+   * - lane 2에 도달하면 "내려갔다" 플래그 ON
+   * - lane 0으로 복귀 시 카운트 + 플래그 OFF
+   * 이 방식이면 반스쿼트 진동(1↔2)으로 인한 오카운트 없음.
+   */
+  private updateSquatCount(p: PlayerState, lane: number) {
+    if (!p.detector.calibrated) return;
+    if (lane === 2) {
+      p.squatReachedBottom = true;
+    } else if (lane === 0 && p.squatReachedBottom) {
+      p.squatCount++;
+      p.calories = p.squatCount * 0.32;
+      p.squatReachedBottom = false;
     }
   }
 
