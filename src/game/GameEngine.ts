@@ -81,7 +81,8 @@ const SPR_SIZES: Record<SprName, [number, number]> = {
 /** 레벨별 보스/정크푸드 난이도 */
 function getLevelConfig(level: number) {
   return {
-    bossDistance: 3000 + (level - 1) * 1500,
+    /** 보스까지 달려가야 하는 거리 (px) */
+    bossDistance: 7000 + (level - 1) * 2500,
     bossHP: 100 + (level - 1) * 50,
     junkFoodInterval: Math.max(0.4, 0.9 - (level - 1) * 0.08),
     junkFoodSpeed: 280 + (level - 1) * 25,
@@ -876,11 +877,13 @@ export class GameEngine {
     const sprKey = this.boss.spriteKey;
     const spr = this.sprites[sprKey];
 
-    // 등장 슬라이드인 (0~0.6초)
+    // 등장 슬라이드인 (0~0.6초) - 게임 영역 우측 밖에서 targetX로 슬라이드
     const since = now - this.bossEntryT;
     const slideT = Math.min(1, since / 0.6);
     const targetX = this.boss.x;
-    const drawX = targetX + (1 - slideT) * 300;
+    // 게임 영역 우측 바깥(GAME_W)에서 시작해서 targetX로
+    const startX = GAME_W + 20;
+    const drawX = targetX + (1 - slideT) * (startX - targetX);
 
     // 데미지 받았을 때 살짝 흔들림
     const shake = this.boss.alive ? 0 : Math.sin(now * 30) * 6;

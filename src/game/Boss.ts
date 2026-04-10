@@ -20,8 +20,8 @@ export class Boss {
     this.spriteKey =
       level <= 1 ? 'boss_fatty_1' :
       level <= 3 ? 'boss_fatty_2' : 'boss_fatty_3';
-    // 화면 오른쪽 끝, 세로 중앙 anchor
-    this.x = GAME_W - BOSS_W - 20;
+    // 게임 영역 오른쪽 끝, 세로 중앙 flush
+    this.x = GAME_W - BOSS_W;
     this.y = (H - BOSS_H) / 2;
   }
 
