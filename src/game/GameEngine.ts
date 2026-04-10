@@ -3,7 +3,7 @@ import {
   LANE_FLOOR_Y, PLATFORM_H, PLAYER_H, PLAYER_W,
   LANE_COLORS, SCROLL_SPEED_INIT, SCROLL_SPEED_MAX, SCROLL_ACCEL,
   GAP_MIN_W, GAP_MAX_W, SAFE_ZONE_MIN, SAFE_ZONE_MAX,
-  INVINCIBLE_DUR, POSE_CONNECTIONS,
+  INVINCIBLE_DUR, MAX_LIVES, MEAT_PER_LIFE, POSE_CONNECTIONS,
   LM_RIGHT_HIP, LM_RIGHT_KNEE, LM_RIGHT_ANKLE,
 } from './constants';
 import { Challenge } from './Challenge';
@@ -485,20 +485,48 @@ export class GameEngine {
   }
 
   /**
-   * 스쿼트 rep 카운터 (상태 머신).
-   * 완전한 rep = 서있음(lane 0) → 풀스쿼트(lane 2) → 다시 서있음(lane 0).
-   * - lane 2에 도달하면 "내려갔다" 플래그 ON
-   * - lane 0으로 복귀 시 카운트 + 플래그 OFF
-   * 이 방식이면 반스쿼트 진동(1↔2)으로 인한 오카운트 없음.
+   * 스쿼트 rep 카운터 (반쪽 rep 지원 상태 머신).
+   *
+   * - 풀 rep (1.0): lane 2 도달 후 lane 0까지 복귀
+   * - 반 rep (0.5): lane 2 도달 후 lane 1 까지만 복귀 (아직 lane 0 안 찍음)
+   *   → 이후 lane 0 도달 시 추가 0.5 가산되어 누적 1.0 (풀 rep)
+   *   → 이후 lane 2로 다시 내려가면 0.5는 확정, 새 rep 시작
+   *
+   * 예시:
+   *   0→2→0         = 1.0
+   *   1→2→1         = 0.5
+   *   1→2→1→2→1     = 1.0 (half × 2)
+   *   0→2→1→2→0     = 1.5 (half + full)
    */
   private updateSquatCount(p: PlayerState, lane: number) {
     if (!p.detector.calibrated) return;
+
     if (lane === 2) {
-      p.squatReachedBottom = true;
-    } else if (lane === 0 && p.squatReachedBottom) {
-      p.squatCount++;
+      // 바닥 도달: 이전 rep가 0.5만 가산된 상태였다면 거기서 확정, 새 rep 시작
+      if (p.squatHalfCredited) p.squatHalfCredited = false;
+      p.squatDescended = true;
+      return;
+    }
+
+    if (!p.squatDescended) return;
+
+    if (lane === 0) {
+      // 완전히 섰다
+      if (p.squatHalfCredited) {
+        // 이미 0.5 가산됨 → 추가 0.5로 풀 rep 완성
+        p.squatCount += 0.5;
+      } else {
+        // 바닥 → 곧바로 정상 = 풀 rep
+        p.squatCount += 1;
+      }
       p.calories = p.squatCount * 0.32;
-      p.squatReachedBottom = false;
+      p.squatDescended = false;
+      p.squatHalfCredited = false;
+    } else if (lane === 1 && !p.squatHalfCredited) {
+      // 바닥 → 중간 복귀: 일단 0.5 가산 (이후 lane 0 가면 추가 0.5, lane 2 가면 0.5 확정)
+      p.squatCount += 0.5;
+      p.calories = p.squatCount * 0.32;
+      p.squatHalfCredited = true;
     }
   }
 
@@ -509,6 +537,16 @@ export class GameEngine {
         p.meatCount++;
         p.meatPopN = p.meatCount;
         p.meatPopT = now;
+
+        // MEAT_PER_LIFE마다 목숨 +1 (최대 MAX_LIVES)
+        p.meatLifeProgress++;
+        if (p.meatLifeProgress >= MEAT_PER_LIFE) {
+          p.meatLifeProgress = 0;
+          if (p.lives < MAX_LIVES) {
+            p.lives++;
+            p.lifeAddedT = now;
+          }
+        }
       }
     }
   }
@@ -678,6 +716,7 @@ export class GameEngine {
     }
 
     this.drawHUD();
+    this.drawLifeAddedToast();
 
     if (this.state === 'calib') {
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
@@ -960,6 +999,34 @@ export class GameEngine {
     ctx.textAlign = 'left';
   }
 
+  private drawLifeAddedToast() {
+    const { ctx } = this;
+    const now = performance.now() / 1000;
+    const TOAST_DUR = 1.6;
+    for (const p of this.players) {
+      const t = now - p.lifeAddedT;
+      if (t < 0 || t > TOAST_DUR) continue;
+      // 페이드 + 위로 살짝 이동
+      const k = t / TOAST_DUR;
+      const alpha = k < 0.15 ? k / 0.15 : 1 - (k - 0.15) / 0.85;
+      const yOff = -k * 30;
+      const cx = GAME_W / 2;
+      const cy = 120 + yOff;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(0,0,0,${0.55 * alpha})`;
+      ctx.fillRect(cx - 150, cy - 34, 300, 52);
+      ctx.fillStyle = `rgba(255,80,120,${alpha})`;
+      ctx.font = 'bold 30px sans-serif';
+      ctx.fillText('❤ LIFE ADDED!', cx, cy);
+      ctx.fillStyle = `rgba(255,255,255,${0.85 * alpha})`;
+      ctx.font = '15px sans-serif';
+      ctx.fillText(`+1 life (every ${MEAT_PER_LIFE} bones)`, cx, cy + 18);
+      ctx.restore();
+    }
+    ctx.textAlign = 'left';
+  }
+
   private drawVictory() {
     const { ctx } = this;
     const now = performance.now() / 1000;
@@ -986,7 +1053,7 @@ export class GameEngine {
 
     const heartSpr = this.sprites.heart;
     const drawHearts = (startX: number, lives: number) => {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < MAX_LIVES; i++) {
         const hx = startX + i * 30;
         if (heartSpr) {
           const [hw, hh] = SPR_SIZES.heart;
@@ -1023,7 +1090,7 @@ export class GameEngine {
       ctx.fillText(`🔥 ${p.calories.toFixed(2)} kcal`, 200, 38);
 
       ctx.fillStyle = '#a0e632';
-      ctx.fillText(`🦵 ${p.squatCount}`, 340, 38);
+      ctx.fillText(`🦵 ${p.squatCount.toFixed(1)}`, 340, 38);
 
       if (this.state === 'play') {
         const spd = Math.floor(this.scrollSpd / SCROLL_SPEED_INIT * 100);
@@ -1155,7 +1222,7 @@ export class GameEngine {
       ctx.fillStyle = '#ff7d3c';
       ctx.font = 'bold 24px sans-serif';
       ctx.fillText(
-        `Squats: ${p.squatCount} reps  |  Calories: ${p.calories.toFixed(2)} kcal`,
+        `Squats: ${p.squatCount.toFixed(1)} reps  |  Calories: ${p.calories.toFixed(2)} kcal`,
         GAME_W / 2,
         H / 2 + 54,
       );

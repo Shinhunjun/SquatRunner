@@ -26,6 +26,8 @@ export const SAFE_ZONE_MIN = 420;
 export const SAFE_ZONE_MAX = 680;
 
 export const INVINCIBLE_DUR   = 2.0;
+export const MAX_LIVES        = 3;
+export const MEAT_PER_LIFE    = 30;
 export const LANE_THRESHOLDS: [number, number] = [0.55, 0.88];
 export const EMA_ALPHA        = 0.45;
 export const CALIB_FRAMES     = 70;

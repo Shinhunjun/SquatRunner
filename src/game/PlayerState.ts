@@ -24,10 +24,18 @@ export class PlayerState {
   legPhase = 0;
   alive = true;
 
+  /** 풀 rep = 1.0, 반 rep = 0.5 로 누적 */
   squatCount = 0;
   calories = 0;
-  /** rep 중 풀스쿼트(lane 2)까지 내려갔는지 — 다시 lane 0까지 올라와야 카운트 */
-  squatReachedBottom = false;
+  /** 이번 rep 내에서 lane 2(풀스쿼트)까지 내려갔는지 */
+  squatDescended = false;
+  /** 이번 rep를 0.5로 이미 가산했는지 (lane 0 도달 시 추가 0.5로 1.0 완성 가능) */
+  squatHalfCredited = false;
+
+  /** 보너스 생명 진행도 (고기 30개 시 +1 life) */
+  meatLifeProgress = 0;
+  /** "Life added!" 토스트 표시 타임스탬프 (초) */
+  lifeAddedT = 0;
 
   constructor(public idx: number) {
     this.screenX = PLAYER_SCREEN_X[idx] ?? 130;
@@ -45,6 +53,9 @@ export class PlayerState {
     this.alive = true;
     this.squatCount = 0;
     this.calories = 0;
-    this.squatReachedBottom = false;
+    this.squatDescended = false;
+    this.squatHalfCredited = false;
+    this.meatLifeProgress = 0;
+    this.lifeAddedT = 0;
   }
 }
