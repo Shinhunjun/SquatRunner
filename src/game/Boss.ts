@@ -20,8 +20,8 @@ export class Boss {
     this.spriteKey =
       level <= 1 ? 'boss_fatty_1' :
       level <= 3 ? 'boss_fatty_2' : 'boss_fatty_3';
-    // 우측 하단 anchor
-    this.x = GAME_W - BOSS_W - 30;
+    // 화면 중앙 하단 anchor
+    this.x = (GAME_W - BOSS_W) / 2;
     this.y = H - BOSS_H - 60;
   }
 
@@ -30,8 +30,8 @@ export class Boss {
     if (this.hp <= 0) this.alive = false;
   }
 
-  /** 보스 던지는 시작 위치 (x, y) */
+  /** 보스 던지는 시작 위치 (x, y) - 보스 왼쪽 가슴 근처 */
   throwOrigin(): [number, number] {
-    return [this.x + 40, this.y + BOSS_H * 0.45];
+    return [this.x + 20, this.y + BOSS_H * 0.4];
   }
 }

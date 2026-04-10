@@ -121,6 +121,8 @@ export class GameEngine {
   private nextJunkAt = 0;
   private victoryT = 0;
   private bossEntryT = 0;
+  private junkLaneQueue: number[] = [];
+  private audioUnlocked = false;
 
   constructor(private canvas: HTMLCanvasElement, numPlayers = 1) {
     this.ctx = canvas.getContext('2d')!;
@@ -135,6 +137,28 @@ export class GameEngine {
     });
 
     this.startVoiceRecognition();
+    this.setupAudioUnlock();
+  }
+
+  /** 브라우저 autoplay 정책 우회: 첫 사용자 제스처 시 오디오 해제 */
+  private setupAudioUnlock() {
+    const unlock = () => {
+      if (this.audioUnlocked) return;
+      if (!this.audio) return;
+      this.audio.play().then(() => {
+        this.audio!.pause();
+        this.audio!.currentTime = 0;
+        this.audioUnlocked = true;
+        // 게임이 이미 진행 중이면 바로 재생
+        if (this.state === 'play') this.playMusic();
+      }).catch(() => {});
+    };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'click'] as const;
+    const handler = () => {
+      unlock();
+      events.forEach(ev => window.removeEventListener(ev, handler));
+    };
+    events.forEach(ev => window.addEventListener(ev, handler, { once: false }));
   }
 
   private startVoiceRecognition() {
@@ -193,7 +217,7 @@ export class GameEngine {
   }
 
   private playMusic() {
-    this.audio?.play().catch(() => {});
+    this.audio?.play().then(() => { this.audioUnlocked = true; }).catch(() => {});
   }
   private stopMusic() {
     if (this.audio) { this.audio.pause(); this.audio.currentTime = 0; }
@@ -219,6 +243,7 @@ export class GameEngine {
     this.victoryT = 0;
     this.bossEntryT = 0;
     this.nextJunkAt = 0;
+    this.junkLaneQueue = [];
     this.state = 'play';
     this.playMusic();
   }
@@ -244,6 +269,7 @@ export class GameEngine {
     this.nextJunkAt = this.bossEntryT + 1.5;  // 등장 후 1.5초 뒤 첫 발
     this.challenges = [];
     this.junkFoods = [];
+    this.junkLaneQueue = [];
   }
 
   // ── 외부에서 매 프레임 호출 ──────────────────────────────
@@ -388,12 +414,20 @@ export class GameEngine {
     if (!this.boss) return;
     const cfg = getLevelConfig(this.level);
 
-    // 정크푸드 스폰
+    // 정크푸드 스폰: 3레인 셔플 큐로 골고루 분배
     if (this.boss.alive && now >= this.nextJunkAt) {
-      const lane = Math.floor(Math.random() * 3);
-      const [bx, by] = this.boss.throwOrigin();
+      if (this.junkLaneQueue.length === 0) {
+        const q = [0, 1, 2];
+        // Fisher-Yates
+        for (let i = q.length - 1; i > 0; i--) {
+          const k = Math.floor(Math.random() * (i + 1));
+          [q[i], q[k]] = [q[k], q[i]];
+        }
+        this.junkLaneQueue = q;
+      }
+      const lane = this.junkLaneQueue.shift()!;
+      const [bx] = this.boss.throwOrigin();
       const jf = new JunkFood(lane, bx, cfg.junkFoodSpeed);
-      jf.y = by;  // 보스 가슴 높이에서 출발해서 자체 lane y로 점차 이동? 단순화: 직선
       this.junkFoods.push(jf);
       this.nextJunkAt = now + cfg.junkFoodInterval;
     }
