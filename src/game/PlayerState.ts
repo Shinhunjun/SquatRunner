@@ -37,6 +37,9 @@ export class PlayerState {
   /** "Life added!" 토스트 표시 타임스탬프 (초) */
   lifeAddedT = 0;
 
+  /** 원격 플레이어 표시 이름 (undefined이면 로컬 플레이어) */
+  remoteName?: string;
+
   constructor(public idx: number) {
     this.screenX = PLAYER_SCREEN_X[idx] ?? 130;
     this.color   = PLAYER_COLORS[idx] ?? '#ffffff';

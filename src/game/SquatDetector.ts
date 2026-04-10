@@ -7,7 +7,7 @@ export class SquatDetector {
   private _frames = 0;
 
   calibrated = false;
-  lane = 0;
+  lane: 0 | 1 | 2 = 0;
   smoothNorm = 1.0;
 
   update(rawAngle: number) {

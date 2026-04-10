@@ -8,7 +8,7 @@ export const LANE_FLOOR_Y = [175, 375, 565] as const;
 export const PLATFORM_H = 20;
 export const PLAYER_H = 60;
 export const PLAYER_W = 40;
-export const PLAYER_SCREEN_X = [130, 185] as const; // P1, P2
+export const PLAYER_SCREEN_X = [130, 185, 240, 295] as const; // P1~P4
 
 export const LANE_COLORS = [
   '#32d250', // 초록 (서있기)

@@ -228,6 +228,41 @@ export class GameEngine {
     if (this.state === 'ready' || this.state === 'over') this.reset();
   }
 
+  // ── 원격 멀티플레이어 API ────────────────────────────────
+  /** 원격 플레이어 슬롯 추가 → 배정된 인덱스 반환 */
+  addRemotePlayer(name?: string): number {
+    const idx = this.players.length;
+    const p = new PlayerState(idx);
+    p.detector.calibrated = true; // 원격은 캘리브레이션 불필요
+    p.remoteName = name ?? `P${idx + 1}`;
+    this.players.push(p);
+    this.numPlayers = this.players.length;
+    return idx;
+  }
+
+  /** 원격 플레이어의 lane을 WebSocket 값으로 직접 주입 */
+  injectRemoteLane(idx: number, lane: number, calibrated = true) {
+    if (idx > 0 && idx < this.players.length) {
+      this.players[idx].detector.lane = lane as 0 | 1 | 2;
+      this.players[idx].detector.calibrated = calibrated;
+    }
+  }
+
+  /** 원격 플레이어 슬롯 제거 */
+  removeRemotePlayer(idx: number) {
+    if (idx > 0 && idx < this.players.length) {
+      this.players.splice(idx, 1);
+      // 이후 인덱스 재정렬
+      for (let i = idx; i < this.players.length; i++) {
+        this.players[i].idx = i;
+      }
+      this.numPlayers = this.players.length;
+    }
+  }
+
+  /** 현재 플레이어 수 */
+  get playerCount() { return this.players.length; }
+
   reset() {
     this.challenges = [];
     this.meats = [];
