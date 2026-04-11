@@ -40,22 +40,12 @@ export default class GameRoom implements Party.Server {
       }));
     }
 
-    // 호스트 → 참가자 단방향 브로드캐스트 메시지들
-    if (
-      data.type === "game_sync" ||  // 시드
-      data.type === "tick" ||       // compact tick (매 프레임)
-      data.type === "full_sync"     // 전체 상태 (2초마다 위치 교정)
-    ) {
-      this.room.broadcast(JSON.stringify(data), [sender.id]);
-      return;
-    }
-
+    // 참가자 → 호스트: lane 업데이트만 특수 처리
     if (data.type === "lane_update") {
       const p = this.players.get(sender.id);
       if (p) {
         p.lane = typeof data.lane === "number" ? data.lane : 0;
         p.calibrated = data.calibrated !== false;
-        // 호스트에게만 전달 (본인 제외)
         this.room.broadcast(JSON.stringify({
           type: "lane_update",
           playerId: sender.id,
@@ -63,6 +53,13 @@ export default class GameRoom implements Party.Server {
           calibrated: p.calibrated,
         }), [sender.id]);
       }
+      return;
+    }
+
+    // join은 위에서 처리됨 — 그 외 모든 메시지(game_sync, tick, full_sync 등)는
+    // 자동 브로드캐스트. 새 타입 추가 시 서버 수정 불필요.
+    if (data.type !== "join") {
+      this.room.broadcast(JSON.stringify(data), [sender.id]);
     }
   }
 

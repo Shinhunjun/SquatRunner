@@ -100,16 +100,24 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
           }
           // compact tick: 매 프레임 장애물 scrollDx + 플레이어/보스 상태
           if (data.type === 'tick') {
-            engine.applyCompactTick(
-              data as Parameters<typeof engine.applyCompactTick>[0]
-            );
+            try {
+              engine.applyCompactTick(
+                data as Parameters<typeof engine.applyCompactTick>[0]
+              );
+            } catch (err) {
+              console.warn('applyCompactTick error:', err);
+            }
             setWaiting(false);
           }
           // full sync: 2초마다 장애물 절대 위치 교정
           if (data.type === 'full_sync') {
-            engine.applyRemoteRenderState(
-              data as Parameters<typeof engine.applyRemoteRenderState>[0]
-            );
+            try {
+              engine.applyRemoteRenderState(
+                data as Parameters<typeof engine.applyRemoteRenderState>[0]
+              );
+            } catch (err) {
+              console.warn('applyRemoteRenderState error:', err);
+            }
             setWaiting(false);
           }
         };
