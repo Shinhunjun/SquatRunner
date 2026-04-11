@@ -1287,7 +1287,7 @@ export class GameEngine {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`FATTY  ${Math.ceil(this.boss.hp)} / ${this.boss.maxHp}`, barX + barW / 2, barY + 13);
+    ctx.fillText(`BIG BOSS  ${Math.ceil(this.boss.hp)} / ${this.boss.maxHp}`, barX + barW / 2, barY + 13);
     ctx.textAlign = 'left';
   }
 

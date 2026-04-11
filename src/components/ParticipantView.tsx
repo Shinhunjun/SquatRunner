@@ -37,21 +37,23 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
   const engineRef = useRef<GameEngine | null>(null);
   const socketRef = useRef<PartySocket | null>(null);
 
-  const [status,     setStatus]     = useState('포즈 모델 로딩...');
-  const [ready,      setReady]      = useState(false);
-  const [connected,  setConnected]  = useState(false);
-  const [myLane,     setMyLane]     = useState<0 | 1 | 2>(0);
-  const [calibrated, setCalibrated] = useState(false);
-  const [waiting,    setWaiting]    = useState(true); // 호스트 상태 수신 전
+  const [status,        setStatus]        = useState('Loading pose model...');
+  const [ready,         setReady]         = useState(false);
+  const [connected,     setConnected]     = useState(false);
+  const [myLane,        setMyLane]        = useState<0 | 1 | 2>(0);
+  const [calibrated,    setCalibrated]    = useState(false);
+  const [waiting,       setWaiting]       = useState(true);
+  const [calibProgress, setCalibProgress] = useState(0);
+  const [error,         setError]         = useState<string | null>(null);
 
   const LANE_COLORS = ['#32d250', '#3cb4ff', '#eb3b24'];
-  const LANE_LABELS = ['🟢 서있기', '🔵 반스쿼트', '🔴 풀스쿼트'];
+  const LANE_LABELS = ['🟢 Standing', '🔵 Half Squat', '🔴 Full Squat'];
 
   useEffect(() => {
     let animId: number;
     let landmarker: PoseLandmarker;
 
-    // EMA 캘리브레이션 상태
+    // EMA calibration state
     let ema: number | null = null;
     let obsMin = Infinity, obsMax = -Infinity, frames = 0;
     let calibDone = false;
@@ -60,7 +62,7 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
 
     async function init() {
       try {
-        // ── 포즈 모델 ──
+        // ── Pose model ──
         const vision = await FilesetResolver.forVisionTasks(WASM_URL);
         landmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
@@ -68,22 +70,28 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
           numPoses: 1,
         });
 
-        // ── 카메라 ──
-        setStatus('카메라 연결...');
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720, facingMode: 'user' },
-        });
+        // ── Camera ──
+        setStatus('Connecting camera...');
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 1280, height: 720, facingMode: 'user' },
+          });
+        } catch {
+          setError('Camera access denied. Please allow camera access and reload.');
+          return;
+        }
         videoRef.current!.srcObject = stream;
         await videoRef.current!.play();
 
-        // ── GameEngine (뷰어 모드 — 게임 에셋 로드 후 applyRemoteRenderState로 구동) ──
-        setStatus('에셋 로딩...');
+        // ── GameEngine (viewer mode) ──
+        setStatus('Loading assets...');
         const engine = new GameEngine(canvasRef.current!, 1);
         await engine.loadAssets();
         engineRef.current = engine;
 
-        // ── PartyKit 연결 ──
-        setStatus('서버 연결...');
+        // ── PartyKit connection ──
+        setStatus('Connecting to server...');
         const socket = new PartySocket({ host: PARTYKIT_HOST, room: roomCode });
         socketRef.current = socket;
 
@@ -98,7 +106,6 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
           if (data.type === 'game_sync') {
             engine.setSeed(data.seed as number);
           }
-          // compact tick: 매 프레임 장애물 scrollDx + 플레이어/보스 상태
           if (data.type === 'tick') {
             try {
               engine.applyCompactTick(
@@ -109,7 +116,6 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
             }
             setWaiting(false);
           }
-          // full sync: 2초마다 장애물 절대 위치 교정
           if (data.type === 'full_sync') {
             try {
               engine.applyRemoteRenderState(
@@ -122,11 +128,11 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
           }
         };
 
-        socket.onerror = () => setStatus('서버 연결 실패');
+        socket.onerror = () => setError('Server connection failed. Please reload.');
 
         setReady(true);
 
-        // ── 메인 루프 ──
+        // ── Main loop ──
         function loop() {
           const video = videoRef.current!;
 
@@ -134,7 +140,7 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
             const result = landmarker.detectForVideo(video, performance.now());
             const lms = result.landmarks.length ? result.landmarks : [null];
 
-            // 포즈 감지 → lane 계산 → PartyKit 전송
+            // Pose detection → lane calculation → send to PartyKit
             if (result.landmarks.length > 0) {
               const angle = kneeAngle(result.landmarks[0]);
               if (angle !== null) {
@@ -145,10 +151,21 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
                 obsMax = Math.max(obsMax, ema);
                 frames++;
                 const range = obsMax - obsMin;
-                if (!calibDone && range >= 20 && frames >= CALIB_FRAMES) {
-                  calibDone = true;
-                  setCalibrated(true);
+
+                if (!calibDone) {
+                  // Progress: 50% weight on frames, 50% on range coverage
+                  const framesPct  = Math.min(1, frames / CALIB_FRAMES);
+                  const rangePct   = Math.min(1, range / 20);
+                  const progress   = Math.round((framesPct * 0.5 + rangePct * 0.5) * 100);
+                  setCalibProgress(progress);
+
+                  if (range >= 20 && frames >= CALIB_FRAMES) {
+                    calibDone = true;
+                    setCalibrated(true);
+                    setCalibProgress(100);
+                  }
                 }
+
                 if (calibDone) {
                   const norm = Math.max(0, Math.min(1, (ema - obsMin) / Math.max(range, 1)));
                   const [lo, hi] = LANE_THRESHOLDS;
@@ -164,7 +181,7 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
               }
             }
 
-            // 호스트 게임 상태를 내 캔버스에 렌더링 (본인 카메라 + 동일 게임 화면)
+            // Render host game state on local canvas
             engine.drawViewerFrame(video, lms);
           }
 
@@ -172,7 +189,7 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
         }
         animId = requestAnimationFrame(loop);
       } catch (err) {
-        setStatus(`오류: ${err}`);
+        setError(`Error: ${err}`);
       }
     }
 
@@ -187,12 +204,12 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black gap-2">
-      {/* 상태 헤더 */}
+      {/* Status header */}
       <div className="flex items-center gap-4 bg-gray-900 px-5 py-2 rounded-xl">
         <span className={`text-sm font-bold px-3 py-1 rounded-full ${
           connected ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-400'
         }`}>
-          {connected ? '● 연결됨' : '○ 연결 중...'}
+          {connected ? '● Connected' : '○ Connecting...'}
         </span>
         <span className="text-yellow-400 font-mono text-xl font-bold tracking-widest">
           {roomCode}
@@ -205,20 +222,55 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
             {LANE_LABELS[myLane]}
           </span>
         )}
-        {!calibrated && connected && (
-          <span className="text-yellow-400 text-sm animate-pulse">
-            ⚠ 무릎을 구부렸다 펴세요 (캘리브레이션)
-          </span>
-        )}
       </div>
 
-      {(!ready || waiting) && (
-        <div className="absolute z-10 text-white text-xl bg-black/80 px-6 py-3 rounded-lg">
-          {!ready ? status : '호스트 연결 대기 중...'}
+      {/* Calibration panel */}
+      {!calibrated && connected && !error && (
+        <div className="flex flex-col items-center gap-2 bg-gray-900 px-6 py-4 rounded-xl w-full max-w-md">
+          <p className="text-yellow-400 text-sm font-bold text-center">
+            Calibration — stand up straight, then squat as low as you can, then stand up again
+          </p>
+          <div className="w-full bg-gray-700 rounded-full h-3">
+            <div
+              className="h-3 rounded-full transition-all duration-300"
+              style={{
+                width: `${calibProgress}%`,
+                background: calibProgress < 50 ? '#facc15' : calibProgress < 90 ? '#60a5fa' : '#4ade80',
+              }}
+            />
+          </div>
+          <p className="text-gray-400 text-xs">{calibProgress}% — keep squatting</p>
         </div>
       )}
 
-      {/* 게임 캔버스 — 호스트와 동일한 화면 */}
+      {/* Calibration complete flash */}
+      {calibrated && (
+        <div className="text-green-400 text-sm font-semibold animate-pulse">
+          Calibration complete — play!
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="flex flex-col items-center gap-2 bg-red-900/40 border border-red-700 px-6 py-4 rounded-xl max-w-md text-center">
+          <p className="text-red-300 text-sm font-bold">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-1 px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-sm font-bold rounded-lg transition"
+          >
+            Reload
+          </button>
+        </div>
+      )}
+
+      {/* Loading / waiting overlay */}
+      {(!ready || waiting) && !error && (
+        <div className="absolute z-10 text-white text-xl bg-black/80 px-6 py-3 rounded-lg">
+          {!ready ? status : 'Waiting for host...'}
+        </div>
+      )}
+
+      {/* Game canvas — mirrors host screen */}
       <canvas
         ref={canvasRef}
         width={W}
