@@ -286,6 +286,106 @@ export class GameEngine {
     };
   }
 
+  /** 참가자용 전체 렌더 상태 직렬화 (장애물/아이템 포함) */
+  getFullRenderState() {
+    return {
+      ...this.getCompactState(),
+      scrollSpd: this.scrollSpd,
+      bobT: this.bobT,
+      challenges: this.challenges.map(c => ({ lane: c.lane, x: c.x, width: c.width })),
+      meats: this.meats.map(m => ({ lane: m.lane, x: m.x, collected: m.collected })),
+      junkFoods: this.junkFoods.map(j => ({
+        lane: j.lane, x: j.x, y: j.y, type: j.type, rotation: j.rotation,
+      })),
+      boss: this.boss ? {
+        x: this.boss.x, y: this.boss.y,
+        hp: this.boss.hp, maxHp: this.boss.maxHp,
+        spriteKey: this.boss.spriteKey, alive: this.boss.alive,
+      } : null,
+      bossEntryT: this.bossEntryT,
+      victoryT: this.victoryT,
+      startT: this.startT,
+      playerFallStates: this.players.map(p => ({
+        falling: p.falling, fallY: p.fallY,
+        hitT: p.hitT, invincibleUntil: p.invincibleUntil,
+        legPhase: p.legPhase, meatPopT: p.meatPopT, meatPopN: p.meatPopN,
+        meatCount: p.meatCount, calories: p.calories,
+      })),
+    };
+  }
+
+  /** 호스트에게서 받은 전체 렌더 상태를 적용 (뷰어 모드) */
+  applyRemoteRenderState(s: ReturnType<GameEngine['getFullRenderState']>) {
+    // 게임 상태
+    this.state      = s.gameState as typeof this.state;
+    this.level      = s.level;
+    this.phase      = s.phase as typeof this.phase;
+    this.scrollSpd  = s.scrollSpd;
+    this.bobT       = s.bobT;
+    this.bossEntryT = s.bossEntryT;
+    this.victoryT   = s.victoryT;
+    this.startT     = s.startT;
+    this.levelDistance = s.levelProgress * (7000 + (s.level - 1) * 2500);
+
+    // 플레이어
+    while (this.players.length < s.players.length) {
+      this.players.push(new PlayerState(this.players.length));
+      this.numPlayers = this.players.length;
+    }
+    s.players.forEach((sp, i) => {
+      const p = this.players[i];
+      p.detector.lane       = sp.lane as 0 | 1 | 2;
+      p.detector.calibrated = true;
+      p.lives               = sp.lives;
+      p.score               = sp.score;
+      p.squatCount          = sp.squatCount;
+      p.alive               = sp.alive;
+      p.remoteName          = sp.name;
+      const fs = s.playerFallStates[i];
+      if (fs) {
+        p.falling         = fs.falling;
+        p.fallY           = fs.fallY;
+        p.hitT            = fs.hitT;
+        p.invincibleUntil = fs.invincibleUntil;
+        p.legPhase        = fs.legPhase;
+        p.meatPopT        = fs.meatPopT;
+        p.meatPopN        = fs.meatPopN;
+        p.meatCount       = fs.meatCount;
+        p.calories        = fs.calories;
+      }
+    });
+
+    // 장애물
+    this.challenges = s.challenges.map(c => new Challenge(c.lane, c.x, c.width));
+    this.meats = s.meats.map(m => {
+      const item = new MeatItem(m.lane, m.x);
+      item.collected = m.collected;
+      return item;
+    });
+
+    // 정크푸드
+    this.junkFoods = s.junkFoods.map(j => {
+      const jf = new JunkFood(j.lane, j.x, 0);
+      jf.y        = j.y;
+      jf.type     = j.type as typeof jf.type;
+      jf.rotation = j.rotation;
+      return jf;
+    });
+
+    // 보스
+    if (s.boss) {
+      if (!this.boss) this.boss = new Boss(s.level, s.boss.maxHp);
+      this.boss.x         = s.boss.x;
+      this.boss.y         = s.boss.y;
+      this.boss.hp        = s.boss.hp;
+      this.boss.maxHp     = s.boss.maxHp;
+      this.boss.spriteKey = s.boss.spriteKey;
+      this.boss.alive     = s.boss.alive;
+    } else {
+      this.boss = null;
+    }
+  }
+
   reset() {
     this.challenges = [];
     this.meats = [];
@@ -651,6 +751,21 @@ export class GameEngine {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(CAM_W, 0); ctx.lineTo(CAM_W, H); ctx.stroke();
 
+    this.drawGame();
+  }
+
+  /** 뷰어 모드: 카메라 없이 게임 영역만 전체 캔버스에 렌더링 */
+  drawViewerFrame(video: HTMLVideoElement, allLms: (NormalizedLandmark[] | null)[]) {
+    const { ctx } = this;
+    ctx.clearRect(0, 0, W, H);
+
+    // 좌측: 참가자 본인 카메라
+    this.drawCamera(video, allLms);
+    ctx.strokeStyle = '#3c463c';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(CAM_W, 0); ctx.lineTo(CAM_W, H); ctx.stroke();
+
+    // 우측: 호스트 게임 상태 그대로 렌더
     this.drawGame();
   }
 

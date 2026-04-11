@@ -119,17 +119,17 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
           setReady(true);
           setStatus('');
 
-          // 100ms마다 게임 상태 브로드캐스트
+          // 50ms마다 전체 렌더 상태 브로드캐스트 (참가자가 동일 화면 표시)
           broadcastRef.current = setInterval(() => {
             if (socket.readyState !== WebSocket.OPEN) return;
-            const state = engine.getCompactState();
+            const state = engine.getFullRenderState();
             const playerIds: string[] = new Array(engine.playerCount).fill('');
             playerIds[0] = socket.id ?? '';
             playerMapRef.current.forEach((engineIdx, socketId) => {
               playerIds[engineIdx] = socketId;
             });
             socket.send(JSON.stringify({ type: 'game_state', ...state, playerIds }));
-          }, 100);
+          }, 50);
         };
 
         socket.onmessage = handleMessage;
