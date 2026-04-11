@@ -1,7 +1,7 @@
 import { SquatDetector } from './SquatDetector';
 import { PLAYER_SCREEN_X } from './constants';
 
-export const PLAYER_COLORS = ['#32d250', '#3cb4ff'] as const; // P1 초록, P2 파랑
+export const PLAYER_COLORS = ['#32d250', '#3cb4ff', '#ff6b35', '#ffd700'] as const; // P1 green, P2 blue, P3 orange, P4 gold
 
 export class PlayerState {
   detector = new SquatDetector();

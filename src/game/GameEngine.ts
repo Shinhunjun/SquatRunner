@@ -1200,19 +1200,24 @@ export class GameEngine {
 
     const spr = this.sprites.player;
     if (spr) {
-      if (p.idx === 1) {
-        // P2 파란 색조 (globalCompositeOperation으로 틴팅)
-        ctx.save();
-        ctx.drawImage(spr, cx - pw / 2, foot - ph, pw, ph);
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = '#3cb4ff';
-        ctx.fillRect(cx - pw / 2, foot - ph, pw, ph);
-        ctx.restore();
-      } else {
-        ctx.drawImage(spr, cx - pw / 2, foot - ph, pw, ph);
-      }
+      // Draw colored aura glow behind character
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.ellipse(cx, foot - ph / 2, pw / 2 + 6, ph / 2 + 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Draw sprite with per-player color tint
+      ctx.save();
+      ctx.drawImage(spr, cx - pw / 2, foot - ph, pw, ph);
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = p.color;
+      ctx.fillRect(cx - pw / 2, foot - ph, pw, ph);
+      ctx.restore();
     } else {
-      // 폴백: 스틱 캐릭터
+      // Fallback: stick character
       const head = foot - PLAYER_H;
       const swing = Math.sin(p.legPhase) * 10;
       ctx.fillStyle = p.color;
