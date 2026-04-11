@@ -57,6 +57,9 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
     let calibDone = false;
     let lastSentLane = -1, lastSendT = 0;
 
+    // Dead Reckoning 타이머
+    let prevFrameT = performance.now();
+
     async function init() {
       try {
         // ── 포즈 모델 ──
@@ -109,6 +112,13 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
 
         // ── 메인 루프 ──
         function loop() {
+          const now = performance.now();
+          const dt  = (now - prevFrameT) / 1000;
+          prevFrameT = now;
+
+          // 호스트 상태 수신 사이 프레임에 로컬에서 스크롤 예측 (Dead Reckoning)
+          engine.tickViewerScroll(dt);
+
           const video = videoRef.current!;
 
           if (video.readyState >= 2) {

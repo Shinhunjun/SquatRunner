@@ -754,6 +754,25 @@ export class GameEngine {
     this.drawGame();
   }
 
+  /**
+   * 뷰어 전용 로컬 예측 시뮬레이션 (Dead Reckoning).
+   * 호스트 상태 수신 사이 프레임에 scrollSpd 기반으로 위치를 직접 진행시켜
+   * 60fps 부드러운 스크롤을 유지한다.
+   */
+  tickViewerScroll(dt: number) {
+    if (this.state !== 'play') return;
+    const clampedDt = Math.min(dt, 0.05);
+    const dx = this.scrollSpd * clampedDt;
+    this.bobT += clampedDt;
+    this.challenges.forEach(c => c.scroll(dx));
+    this.meats.forEach(m => m.scroll(dx));
+    this.junkFoods.forEach(j => j.update(clampedDt));
+    // 플레이어 다리 애니메이션
+    this.players.forEach(p => {
+      if (p.alive) p.legPhase = (p.legPhase + clampedDt * 9) % (Math.PI * 2);
+    });
+  }
+
   /** 뷰어 모드: 카메라 없이 게임 영역만 전체 캔버스에 렌더링 */
   drawViewerFrame(video: HTMLVideoElement, allLms: (NormalizedLandmark[] | null)[]) {
     const { ctx } = this;
