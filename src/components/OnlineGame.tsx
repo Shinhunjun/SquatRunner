@@ -33,7 +33,6 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
   const videoRef       = useRef<HTMLVideoElement>(null);
   const engineRef      = useRef<GameEngine | null>(null);
   const socketRef      = useRef<PartySocket | null>(null);
-  const broadcastRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   // playerId → engineIndex 매핑
   const playerMapRef   = useRef<Map<string, number>>(new Map());
 
@@ -129,14 +128,24 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
 
         socket.onopen = () => {
           socket.send(JSON.stringify({ type: 'join', name: 'Host' }));
-          // 참가자에게 시드 전달
           socket.send(JSON.stringify({ type: 'game_sync', seed }));
           setReady(true);
           setStatus('');
+        };
 
-          // 50ms마다 전체 렌더 상태 브로드캐스트 (참가자가 동일 화면 표시)
-          broadcastRef.current = setInterval(() => {
-            if (socket.readyState !== WebSocket.OPEN) return;
+        socket.onmessage = handleMessage;
+        socket.onerror = () => setStatus('서버 연결 실패 — 로컬 모드로 진행');
+
+        // broadcast는 rAF 루프와 동기화 — throttle 없이 매 프레임 전송
+        function loop() {
+          const video = videoRef.current!;
+          if (video.readyState >= 2) {
+            const result = landmarker.detectForVideo(video, performance.now());
+            const lms = result.landmarks.length ? result.landmarks : [null];
+            engine.tick(lms, video);
+          }
+          // 전체 렌더 상태 브로드캐스트 (렌더 루프와 동기화)
+          if (socket.readyState === WebSocket.OPEN) {
             const state = engine.getFullRenderState();
             const playerIds: string[] = new Array(engine.playerCount).fill('');
             playerIds[0] = socket.id ?? '';
@@ -144,18 +153,6 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
               playerIds[engineIdx] = socketId;
             });
             socket.send(JSON.stringify({ type: 'game_state', ...state, playerIds }));
-          }, 50);
-        };
-
-        socket.onmessage = handleMessage;
-        socket.onerror = () => setStatus('서버 연결 실패 — 로컬 모드로 진행');
-
-        function loop() {
-          const video = videoRef.current!;
-          if (video.readyState >= 2) {
-            const result = landmarker.detectForVideo(video, performance.now());
-            const lms = result.landmarks.length ? result.landmarks : [null];
-            engine.tick(lms, video);
           }
           animId = requestAnimationFrame(loop);
         }
@@ -168,7 +165,6 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
     init();
     return () => {
       cancelAnimationFrame(animId);
-      if (broadcastRef.current) clearInterval(broadcastRef.current);
       landmarker?.close();
       socketRef.current?.close();
     };

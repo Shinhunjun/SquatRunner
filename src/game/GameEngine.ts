@@ -782,10 +782,9 @@ export class GameEngine {
   tickViewerScroll(dt: number) {
     if (this.state !== 'play') return;
     const clampedDt = Math.min(dt, 0.05);
-    const dx = this.scrollSpd * clampedDt;
+    // 장애물 x 위치는 host state에서만 설정 (dead reckoning 제거 → 진동 방지)
+    // 애니메이션 타이머만 로컬에서 진행
     this.bobT += clampedDt;
-    this.challenges.forEach(c => c.scroll(dx));
-    this.meats.forEach(m => m.scroll(dx));
     this.junkFoods.forEach(j => j.update(clampedDt));
     // 플레이어 다리 애니메이션
     this.players.forEach(p => {
