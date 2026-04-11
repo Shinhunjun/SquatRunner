@@ -136,7 +136,9 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
         socket.onmessage = handleMessage;
         socket.onerror = () => setStatus('서버 연결 실패 — 로컬 모드로 진행');
 
-        // broadcast는 rAF 루프와 동기화 — throttle 없이 매 프레임 전송
+        // broadcast: compact tick 매 프레임 + full_sync 2초마다
+        let lastFullSyncT = 0;
+
         function loop() {
           const video = videoRef.current!;
           if (video.readyState >= 2) {
@@ -144,16 +146,33 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
             const lms = result.landmarks.length ? result.landmarks : [null];
             engine.tick(lms, video);
           }
-          // 전체 렌더 상태 브로드캐스트 (렌더 루프와 동기화)
+
           if (socket.readyState === WebSocket.OPEN) {
-            const state = engine.getFullRenderState();
+            const now = performance.now();
             const playerIds: string[] = new Array(engine.playerCount).fill('');
             playerIds[0] = socket.id ?? '';
             playerMapRef.current.forEach((engineIdx, socketId) => {
               playerIds[engineIdx] = socketId;
             });
-            socket.send(JSON.stringify({ type: 'game_state', ...state, playerIds }));
+
+            // 매 프레임: compact tick (~400B) — 장애물 scrollDx + 플레이어/보스 상태
+            socket.send(JSON.stringify({
+              type: 'tick',
+              ...engine.getCompactTick(),
+              playerIds,
+            }));
+
+            // 2초마다: full sync (~3-5KB) — 장애물 절대 위치 교정
+            if (now - lastFullSyncT >= 2000) {
+              lastFullSyncT = now;
+              socket.send(JSON.stringify({
+                type: 'full_sync',
+                ...engine.getFullRenderState(),
+                playerIds,
+              }));
+            }
           }
+
           animId = requestAnimationFrame(loop);
         }
         animId = requestAnimationFrame(loop);

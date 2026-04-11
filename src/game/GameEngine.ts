@@ -10,7 +10,7 @@ import { Challenge } from './Challenge';
 import { MeatItem } from './MeatItem';
 import { PlayerState } from './PlayerState';
 import { Boss, BOSS_W, BOSS_H } from './Boss';
-import { JunkFood, JUNK_TYPES, JUNK_SIZE, JUNK_HIT_RADIUS } from './JunkFood';
+import { JunkFood, JUNK_TYPES, type JunkType, JUNK_SIZE, JUNK_HIT_RADIUS } from './JunkFood';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 type State = 'calib' | 'ready' | 'play' | 'over';
@@ -126,6 +126,7 @@ export class GameEngine {
   private audioUnlocked = false;
   private rng: () => number = Math.random;
   private rngSeed = 0;
+  private lastScrollDx = 0;
 
   constructor(private canvas: HTMLCanvasElement, numPlayers = 1) {
     this.ctx = canvas.getContext('2d')!;
@@ -378,7 +379,7 @@ export class GameEngine {
 
     // 정크푸드
     this.junkFoods = (s.junkFoods ?? []).map(j => {
-      const jf = new JunkFood(j.lane, j.x, 0, j.type as import('./JunkFood').JunkType, j.rotSpeed);
+      const jf = new JunkFood(j.lane, j.x, 0, j.type as JunkType, j.rotSpeed);
       jf.y        = j.y;
       jf.rotation = j.rotation;
       jf.vx       = j.vx;
@@ -397,6 +398,124 @@ export class GameEngine {
     } else {
       this.boss = null;
     }
+  }
+
+  // ── Compact Tick (매 프레임 브로드캐스트 — 경량 ~400B) ─────────────────
+  /** 매 프레임 브로드캐스트하는 경량 상태. 장애물 위치 대신 scrollDx만 포함. */
+  getCompactTick() {
+    return {
+      scrollDx:      this.lastScrollDx,
+      bobT:          this.bobT,
+      gameState:     this.state,
+      phase:         this.phase,
+      scrollSpd:     this.scrollSpd,
+      level:         this.level,
+      levelDistance: this.levelDistance,
+      startT:        this.startT,
+      bossEntryT:    this.bossEntryT,
+      victoryT:      this.victoryT,
+      players: this.players.map((p, i) => ({
+        idx:            i,
+        lane:           p.detector.lane as number,
+        lives:          p.lives,
+        score:          Math.floor(p.score),
+        squatCount:     parseFloat(p.squatCount.toFixed(1)),
+        alive:          p.alive,
+        name:           p.remoteName ?? `P${i + 1}`,
+        falling:        p.falling,
+        fallY:          p.fallY,
+        hitT:           p.hitT,
+        invincibleUntil: p.invincibleUntil,
+        legPhase:       p.legPhase,
+        meatPopT:       p.meatPopT,
+        meatPopN:       p.meatPopN,
+        meatCount:      p.meatCount,
+        calories:       p.calories,
+      })),
+      boss: this.boss ? {
+        x: this.boss.x, y: this.boss.y,
+        hp: this.boss.hp, maxHp: this.boss.maxHp,
+        spriteKey: this.boss.spriteKey, alive: this.boss.alive,
+      } : null,
+      junkFoods: this.junkFoods.map(j => ({
+        lane: j.lane, x: j.x, y: j.y, type: j.type,
+        rotation: j.rotation, rotSpeed: j.rotSpeed, vx: j.vx,
+      })),
+      // 고기 수집 상태 (위치는 scrollDx로 추론)
+      meatCollected: this.meats.map(m => m.collected),
+    };
+  }
+
+  /** host로부터 받은 compact tick 적용 */
+  applyCompactTick(tick: ReturnType<GameEngine['getCompactTick']>) {
+    // ── 장애물 위치: host가 알려준 정확한 dx로 전진 ──
+    if (tick.scrollDx > 0) {
+      this.challenges.forEach(c => c.x -= tick.scrollDx);
+      this.meats.forEach(m => m.x -= tick.scrollDx);
+    }
+
+    // ── 고기 수집 상태 ──
+    tick.meatCollected.forEach((collected, i) => {
+      if (i < this.meats.length) this.meats[i].collected = collected;
+    });
+
+    // ── 타이머 / 스피드 ──
+    this.bobT          = tick.bobT;
+    this.state         = tick.gameState as typeof this.state;
+    this.phase         = tick.phase as typeof this.phase;
+    this.scrollSpd     = tick.scrollSpd;
+    this.level         = tick.level;
+    this.levelDistance = tick.levelDistance;
+    this.startT        = tick.startT;
+    this.bossEntryT    = tick.bossEntryT;
+    this.victoryT      = tick.victoryT;
+
+    // ── 플레이어 ──
+    while (this.players.length < tick.players.length) {
+      this.players.push(new PlayerState(this.players.length));
+      this.numPlayers = this.players.length;
+    }
+    tick.players.forEach((tp, i) => {
+      const p = this.players[i];
+      p.detector.lane       = tp.lane as 0 | 1 | 2;
+      p.detector.calibrated = true;
+      p.lives               = tp.lives;
+      p.score               = tp.score;
+      p.squatCount          = tp.squatCount;
+      p.alive               = tp.alive;
+      p.remoteName          = tp.name;
+      p.falling             = tp.falling;
+      p.fallY               = tp.fallY;
+      p.hitT                = tp.hitT;
+      p.invincibleUntil     = tp.invincibleUntil;
+      p.legPhase            = tp.legPhase;
+      p.meatPopT            = tp.meatPopT;
+      p.meatPopN            = tp.meatPopN;
+      p.meatCount           = tp.meatCount;
+      p.calories            = tp.calories;
+    });
+
+    // ── 보스 ──
+    if (tick.boss) {
+      if (!this.boss) this.boss = new Boss(this.level, tick.boss.maxHp);
+      this.boss.x         = tick.boss.x;
+      this.boss.y         = tick.boss.y;
+      this.boss.hp        = tick.boss.hp;
+      this.boss.maxHp     = tick.boss.maxHp;
+      this.boss.spriteKey = tick.boss.spriteKey;
+      this.boss.alive     = tick.boss.alive;
+    } else {
+      this.boss = null;
+    }
+
+    // ── 정크푸드 ──
+    this.junkFoods = tick.junkFoods.map(j => {
+      const jf = new JunkFood(j.lane, j.x, 0, j.type as JunkType, j.rotSpeed);
+      jf.y        = j.y;
+      jf.rotation = j.rotation;
+      jf.vx       = j.vx;
+      return jf;
+    });
   }
 
   reset() {
@@ -490,6 +609,8 @@ export class GameEngine {
 
     if (this.state !== 'play') return;
 
+    this.lastScrollDx = 0; // 매 프레임 초기화; 달리기 단계에서만 설정됨
+
     const now = performance.now() / 1000;
     const dt  = Math.min(now - this.prevT, 0.05);
     this.prevT = now;
@@ -514,6 +635,7 @@ export class GameEngine {
     const baseSpd = SCROLL_SPEED_INIT + (this.level - 1) * 20;
     this.scrollSpd = Math.min(SCROLL_SPEED_MAX, baseSpd + elapsed * SCROLL_ACCEL);
     const dx = this.scrollSpd * dt;
+    this.lastScrollDx = dx; // 참가자에게 전달할 정확한 스크롤 거리
     this.levelDistance += dx;
 
     this.challenges.forEach(c => c.scroll(dx));

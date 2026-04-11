@@ -40,14 +40,12 @@ export default class GameRoom implements Party.Server {
       }));
     }
 
-    // 호스트가 보내는 시드 → 모든 참가자에게 브로드캐스트
-    if (data.type === "game_sync") {
-      this.room.broadcast(JSON.stringify(data), [sender.id]);
-      return;
-    }
-
-    // 호스트가 보내는 게임 상태 → 모든 참가자에게 브로드캐스트
-    if (data.type === "game_state") {
+    // 호스트 → 참가자 단방향 브로드캐스트 메시지들
+    if (
+      data.type === "game_sync" ||  // 시드
+      data.type === "tick" ||       // compact tick (매 프레임)
+      data.type === "full_sync"     // 전체 상태 (2초마다 위치 교정)
+    ) {
       this.room.broadcast(JSON.stringify(data), [sender.id]);
       return;
     }
