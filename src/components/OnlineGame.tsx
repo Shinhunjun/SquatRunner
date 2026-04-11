@@ -20,15 +20,16 @@ interface RemotePlayer {
 }
 
 export default function OnlineGame({ roomCode }: { roomCode: string }) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const videoRef   = useRef<HTMLVideoElement>(null);
-  const engineRef  = useRef<GameEngine | null>(null);
-  const socketRef  = useRef<PartySocket | null>(null);
+  const canvasRef      = useRef<HTMLCanvasElement>(null);
+  const videoRef       = useRef<HTMLVideoElement>(null);
+  const engineRef      = useRef<GameEngine | null>(null);
+  const socketRef      = useRef<PartySocket | null>(null);
+  const broadcastRef   = useRef<ReturnType<typeof setInterval> | null>(null);
   // playerId → engineIndex 매핑
-  const playerMapRef = useRef<Map<string, number>>(new Map());
+  const playerMapRef   = useRef<Map<string, number>>(new Map());
 
-  const [status, setStatus] = useState('Loading...');
-  const [ready,  setReady]  = useState(false);
+  const [status,        setStatus]        = useState('Loading...');
+  const [ready,         setReady]         = useState(false);
   const [remotePlayers, setRemotePlayers] = useState<RemotePlayer[]>([]);
 
   const joinUrl =
@@ -36,7 +37,7 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
       ? `${window.location.origin}/online/${roomCode}/join`
       : `/online/${roomCode}/join`;
 
-  // ── WebSocket 콜백 ──────────────────────────────────────
+  // ── WebSocket 메시지 핸들러 ──────────────────────────────
   const handleMessage = useCallback((event: MessageEvent) => {
     const data = JSON.parse(event.data as string) as Record<string, unknown>;
     const engine = engineRef.current;
@@ -45,7 +46,6 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
     if (data.type === 'player_joined') {
       const players = data.players as Array<{ id: string; name: string }>;
       const myId = socketRef.current?.id;
-      // 호스트 본인 제외한 원격 플레이어 처리
       const remotes = players.filter(p => p.id !== myId);
       setRemotePlayers(remotes);
       remotes.forEach(p => {
@@ -62,13 +62,11 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
       if (idx !== undefined) {
         engine.removeRemotePlayer(idx);
         playerMapRef.current.delete(playerId);
-        // 이후 인덱스 재계산
         const entries = Array.from(playerMapRef.current.entries())
           .sort((a, b) => a[1] - b[1]);
         playerMapRef.current.clear();
         entries.forEach(([id, oldIdx]) => {
-          const newIdx = oldIdx > idx ? oldIdx - 1 : oldIdx;
-          playerMapRef.current.set(id, newIdx);
+          playerMapRef.current.set(id, oldIdx > idx ? oldIdx - 1 : oldIdx);
         });
       }
       const players = data.players as Array<{ id: string; name: string }>;
@@ -77,13 +75,11 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
     }
 
     if (data.type === 'lane_update') {
-      const playerId = data.playerId as string;
-      const lane = data.lane as number;
+      const playerId  = data.playerId as string;
+      const lane      = data.lane as number;
       const calibrated = data.calibrated as boolean;
       const idx = playerMapRef.current.get(playerId);
-      if (idx !== undefined) {
-        engine.injectRemoteLane(idx, lane, calibrated);
-      }
+      if (idx !== undefined) engine.injectRemoteLane(idx, lane, calibrated);
     }
   }, []);
 
@@ -114,15 +110,28 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
         await engine.loadAssets();
         engineRef.current = engine;
 
-        // PartyKit 연결
         setStatus('서버 연결...');
         const socket = new PartySocket({ host: PARTYKIT_HOST, room: roomCode });
         socketRef.current = socket;
+
         socket.onopen = () => {
           socket.send(JSON.stringify({ type: 'join', name: 'Host' }));
           setReady(true);
           setStatus('');
+
+          // 100ms마다 게임 상태 브로드캐스트
+          broadcastRef.current = setInterval(() => {
+            if (socket.readyState !== WebSocket.OPEN) return;
+            const state = engine.getCompactState();
+            const playerIds: string[] = new Array(engine.playerCount).fill('');
+            playerIds[0] = socket.id ?? '';
+            playerMapRef.current.forEach((engineIdx, socketId) => {
+              playerIds[engineIdx] = socketId;
+            });
+            socket.send(JSON.stringify({ type: 'game_state', ...state, playerIds }));
+          }, 100);
         };
+
         socket.onmessage = handleMessage;
         socket.onerror = () => setStatus('서버 연결 실패 — 로컬 모드로 진행');
 
@@ -144,6 +153,7 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
     init();
     return () => {
       cancelAnimationFrame(animId);
+      if (broadcastRef.current) clearInterval(broadcastRef.current);
       landmarker?.close();
       socketRef.current?.close();
     };
@@ -156,7 +166,6 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black gap-2">
-      {/* 방 코드 + 참가 링크 */}
       <div className="flex items-center gap-4 bg-gray-900 px-6 py-2 rounded-xl">
         <span className="text-gray-400 text-sm">방 코드</span>
         <span className="text-yellow-400 text-2xl font-mono font-bold tracking-widest">

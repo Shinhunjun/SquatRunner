@@ -263,6 +263,29 @@ export class GameEngine {
   /** 현재 플레이어 수 */
   get playerCount() { return this.players.length; }
 
+  /** 참가자 화면에 브로드캐스트할 압축 게임 상태 */
+  getCompactState() {
+    const bossDistance = 7000 + (this.level - 1) * 2500;
+    return {
+      players: this.players.map((p, i) => ({
+        idx: i,
+        lane: p.detector.lane as number,
+        lives: p.lives,
+        score: Math.floor(p.score),
+        squatCount: parseFloat(p.squatCount.toFixed(1)),
+        alive: p.alive,
+        color: p.color,
+        name: p.remoteName ?? `P${i + 1}`,
+      })),
+      level: this.level,
+      phase: this.phase,
+      gameState: this.state,
+      bossHP: this.boss?.hp ?? 0,
+      bossMaxHP: this.boss?.maxHp ?? 100,
+      levelProgress: Math.min(1, this.levelDistance / bossDistance),
+    };
+  }
+
   reset() {
     this.challenges = [];
     this.meats = [];

@@ -40,6 +40,12 @@ export default class GameRoom implements Party.Server {
       }));
     }
 
+    // 호스트가 보내는 게임 상태 → 모든 참가자에게 브로드캐스트
+    if (data.type === "game_state") {
+      this.room.broadcast(JSON.stringify(data), [sender.id]);
+      return;
+    }
+
     if (data.type === "lane_update") {
       const p = this.players.get(sender.id);
       if (p) {
