@@ -30,7 +30,7 @@ interface SpeechRecognitionEventLike {
 }
 
 const SPR_NAMES = [
-  'background', 'player', 'meat',
+  'background', 'player', 'player_1', 'player_2', 'player_3', 'player_4', 'meat',
   'platform_green', 'platform_cyan', 'platform_red',
   'hole', 'heart', 'logo',
   'boss_fatty_1', 'boss_fatty_2', 'boss_fatty_3',
@@ -41,6 +41,10 @@ type SprName = typeof SPR_NAMES[number];
 const ASSET_FILES: Record<SprName, string> = {
   background:     '/img/bg-sky.png',
   player:         '/img/runningman-removebg-preview.png',
+  player_1:       '/img/player1.png',
+  player_2:       '/img/player2.png',
+  player_3:       '/img/player3.png',
+  player_4:       '/img/player4.png',
   meat:           '/img/Bone-removebg-preview.png',
   platform_green: '/img/StandingLane.png',
   platform_cyan:  '/img/halfSquatlane.png',
@@ -61,6 +65,10 @@ const ASSET_FILES: Record<SprName, string> = {
 const SPR_SIZES: Record<SprName, [number, number]> = {
   background:     [GAME_W, H],
   player:         [PLAYER_W * 2, PLAYER_H * 2],
+  player_1:       [PLAYER_W * 2, PLAYER_H * 2],
+  player_2:       [PLAYER_W * 2, PLAYER_H * 2],
+  player_3:       [PLAYER_W * 2, PLAYER_H * 2],
+  player_4:       [PLAYER_W * 2, PLAYER_H * 2],
   meat:           [54, 54],
   platform_green: [96, 22],
   platform_cyan:  [96, 22],
@@ -1198,24 +1206,10 @@ export class GameEngine {
     ctx.ellipse(cx, fy + 3, 22, 5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const spr = this.sprites.player;
+    const playerSprKey = (['player_1', 'player_2', 'player_3', 'player_4'] as const)[p.idx];
+    const spr = (playerSprKey && this.sprites[playerSprKey]) ?? this.sprites.player;
     if (spr) {
-      // Draw colored aura glow behind character
-      ctx.save();
-      ctx.globalAlpha = 0.22;
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.ellipse(cx, foot - ph / 2, pw / 2 + 6, ph / 2 + 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Draw sprite with per-player color tint
-      ctx.save();
       ctx.drawImage(spr, cx - pw / 2, foot - ph, pw, ph);
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = p.color;
-      ctx.fillRect(cx - pw / 2, foot - ph, pw, ph);
-      ctx.restore();
     } else {
       // Fallback: stick character
       const head = foot - PLAYER_H;
