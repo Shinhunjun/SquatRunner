@@ -412,6 +412,7 @@ export class GameEngine {
   /** 매 프레임 브로드캐스트하는 경량 상태. 장애물 위치 대신 scrollDx만 포함. */
   getCompactTick() {
     return {
+      hostNow:       performance.now() / 1000,
       scrollDx:      this.lastScrollDx,
       bobT:          this.bobT,
       gameState:     this.state,
@@ -456,6 +457,9 @@ export class GameEngine {
 
   /** host로부터 받은 compact tick 적용 */
   applyCompactTick(tick: ReturnType<GameEngine['getCompactTick']>) {
+    // 호스트↔참가자 클럭 오프셋 보정 (performance.now()는 기기마다 기준점이 다름)
+    const clockOffset = performance.now() / 1000 - tick.hostNow;
+
     // ── 장애물 위치: host가 알려준 정확한 dx로 전진 ──
     if (tick.scrollDx > 0) {
       this.challenges.forEach(c => c.x -= tick.scrollDx);
@@ -474,9 +478,9 @@ export class GameEngine {
     this.scrollSpd     = tick.scrollSpd;
     this.level         = tick.level;
     this.levelDistance = tick.levelDistance;
-    this.startT        = tick.startT;
-    this.bossEntryT    = tick.bossEntryT;
-    this.victoryT      = tick.victoryT;
+    this.startT        = tick.startT        + clockOffset;
+    this.bossEntryT    = tick.bossEntryT    + clockOffset;
+    this.victoryT      = tick.victoryT      + clockOffset;
 
     // ── 플레이어 ──
     while (this.players.length < tick.players.length) {
@@ -494,10 +498,10 @@ export class GameEngine {
       p.remoteName          = tp.name;
       p.falling             = tp.falling;
       p.fallY               = tp.fallY;
-      p.hitT                = tp.hitT;
-      p.invincibleUntil     = tp.invincibleUntil;
+      p.hitT                = tp.hitT           + clockOffset;
+      p.invincibleUntil     = tp.invincibleUntil + clockOffset;
       p.legPhase            = tp.legPhase;
-      p.meatPopT            = tp.meatPopT;
+      p.meatPopT            = tp.meatPopT       + clockOffset;
       p.meatPopN            = tp.meatPopN;
       p.meatCount           = tp.meatCount;
       p.calories            = tp.calories;
