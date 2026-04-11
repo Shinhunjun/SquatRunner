@@ -14,6 +14,15 @@ const WASM_URL =
 const PARTYKIT_HOST =
   process.env.NEXT_PUBLIC_PARTYKIT_HOST ?? 'localhost:1999';
 
+function hashRoomCode(code: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < code.length; i++) {
+    h ^= code.charCodeAt(i);
+    h = (Math.imul(h, 0x01000193) | 0) >>> 0;
+  }
+  return h;
+}
+
 interface RemotePlayer {
   id: string;
   name: string;
@@ -114,8 +123,14 @@ export default function OnlineGame({ roomCode }: { roomCode: string }) {
         const socket = new PartySocket({ host: PARTYKIT_HOST, room: roomCode });
         socketRef.current = socket;
 
+        // 방 코드를 숫자 시드로 변환 (결정론적 맵 생성)
+        const seed = hashRoomCode(roomCode);
+        engine.setSeed(seed);
+
         socket.onopen = () => {
           socket.send(JSON.stringify({ type: 'join', name: 'Host' }));
+          // 참가자에게 시드 전달
+          socket.send(JSON.stringify({ type: 'game_sync', seed }));
           setReady(true);
           setStatus('');
 

@@ -10,7 +10,7 @@ import { Challenge } from './Challenge';
 import { MeatItem } from './MeatItem';
 import { PlayerState } from './PlayerState';
 import { Boss, BOSS_W, BOSS_H } from './Boss';
-import { JunkFood, JUNK_SIZE, JUNK_HIT_RADIUS } from './JunkFood';
+import { JunkFood, JUNK_TYPES, JUNK_SIZE, JUNK_HIT_RADIUS } from './JunkFood';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 type State = 'calib' | 'ready' | 'play' | 'over';
@@ -124,6 +124,8 @@ export class GameEngine {
   private bossEntryT = 0;
   private junkLaneQueue: number[] = [];
   private audioUnlocked = false;
+  private rng: () => number = Math.random;
+  private rngSeed = 0;
 
   constructor(private canvas: HTMLCanvasElement, numPlayers = 1) {
     this.ctx = canvas.getContext('2d')!;
@@ -263,6 +265,16 @@ export class GameEngine {
   /** 현재 플레이어 수 */
   get playerCount() { return this.players.length; }
 
+  /** 방 코드 등으로 결정론적 맵 생성 시드 설정 */
+  setSeed(seed: number) {
+    this.rngSeed = seed;
+    this.rng = mulberry32(seed);
+  }
+
+  private resetRng() {
+    if (this.rngSeed !== 0) this.rng = mulberry32(this.rngSeed);
+  }
+
   /** 참가자 화면에 브로드캐스트할 압축 게임 상태 */
   getCompactState() {
     const bossDistance = 7000 + (this.level - 1) * 2500;
@@ -293,9 +305,10 @@ export class GameEngine {
       scrollSpd: this.scrollSpd,
       bobT: this.bobT,
       challenges: this.challenges.map(c => ({ lane: c.lane, x: c.x, width: c.width })),
-      meats: this.meats.map(m => ({ lane: m.lane, x: m.x, collected: m.collected })),
+      meats: this.meats.map(m => ({ lane: m.lane, x: m.x, collected: m.collected, phase: m.phase })),
       junkFoods: this.junkFoods.map(j => ({
         lane: j.lane, x: j.x, y: j.y, type: j.type, rotation: j.rotation,
+        rotSpeed: j.rotSpeed, vx: j.vx,
       })),
       boss: this.boss ? {
         x: this.boss.x, y: this.boss.y,
@@ -358,17 +371,17 @@ export class GameEngine {
     // 장애물
     this.challenges = (s.challenges ?? []).map(c => new Challenge(c.lane, c.x, c.width));
     this.meats = (s.meats ?? []).map(m => {
-      const item = new MeatItem(m.lane, m.x);
+      const item = new MeatItem(m.lane, m.x, m.phase);
       item.collected = m.collected;
       return item;
     });
 
     // 정크푸드
     this.junkFoods = (s.junkFoods ?? []).map(j => {
-      const jf = new JunkFood(j.lane, j.x, 0);
+      const jf = new JunkFood(j.lane, j.x, 0, j.type as import('./JunkFood').JunkType, j.rotSpeed);
       jf.y        = j.y;
-      jf.type     = j.type as typeof jf.type;
       jf.rotation = j.rotation;
+      jf.vx       = j.vx;
       return jf;
     });
 
@@ -403,6 +416,7 @@ export class GameEngine {
     this.bossEntryT = 0;
     this.nextJunkAt = 0;
     this.junkLaneQueue = [];
+    this.resetRng();
     this.state = 'play';
     this.playMusic();
   }
@@ -418,6 +432,7 @@ export class GameEngine {
     this.scrollSpd = SCROLL_SPEED_INIT + (this.level - 1) * 20;
     this.challenges = [];
     this.meats = [];
+    this.resetRng();
   }
 
   private spawnBoss() {
@@ -574,14 +589,18 @@ export class GameEngine {
         const q = [0, 1, 2];
         // Fisher-Yates
         for (let i = q.length - 1; i > 0; i--) {
-          const k = Math.floor(Math.random() * (i + 1));
+          const k = Math.floor(this.rng() * (i + 1));
           [q[i], q[k]] = [q[k], q[i]];
         }
         this.junkLaneQueue = q;
       }
       const lane = this.junkLaneQueue.shift()!;
       const [bx] = this.boss.throwOrigin();
-      const jf = new JunkFood(lane, bx, cfg.junkFoodSpeed);
+      const jf = new JunkFood(
+        lane, bx, cfg.junkFoodSpeed,
+        JUNK_TYPES[Math.floor(this.rng() * JUNK_TYPES.length)],
+        (this.rng() - 0.5) * 6,
+      );
       this.junkFoods.push(jf);
       this.nextJunkAt = now + cfg.junkFoodInterval;
     }
@@ -714,27 +733,28 @@ export class GameEngine {
   }
 
   private generate(difficulty: number) {
+    const rng = this.rng;
     const right = this.challenges.length
       ? Math.max(...this.challenges.map(c => c.xEnd))
       : GAME_W + 300;
 
     let r = right;
     while (r < GAME_W + 800) {
-      const safeW = randInt(
+      const safeW = randInt(rng,
         Math.max(300, SAFE_ZONE_MIN - difficulty * 100),
         Math.max(350, SAFE_ZONE_MAX - difficulty * 150),
       );
-      for (let i = 0; i < randInt(2, 4); i++) {
-        this.meats.push(new MeatItem(randInt(0, 2), r + Math.random() * (safeW - 80) + 40));
+      for (let i = 0; i < randInt(rng, 2, 4); i++) {
+        this.meats.push(new MeatItem(randInt(rng, 0, 2), r + rng() * (safeW - 80) + 40, rng() * Math.PI * 2));
       }
       r += safeW;
 
-      const gapW  = (GAP_MIN_W + Math.random() * (GAP_MAX_W - GAP_MIN_W)) * (1 + difficulty * 0.6) | 0;
-      const cLane = randInt(0, 2);
+      const gapW  = (GAP_MIN_W + rng() * (GAP_MAX_W - GAP_MIN_W)) * (1 + difficulty * 0.6) | 0;
+      const cLane = randInt(rng, 0, 2);
       this.challenges.push(new Challenge(cLane, r, gapW));
       for (let sl = 0; sl < 3; sl++) {
-        if (sl !== cLane && Math.random() < 0.55) {
-          this.meats.push(new MeatItem(sl, r + gapW * (0.15 + Math.random() * 0.7)));
+        if (sl !== cLane && rng() < 0.55) {
+          this.meats.push(new MeatItem(sl, r + gapW * (0.15 + rng() * 0.7), rng() * Math.PI * 2));
         }
       }
       r += gapW;
@@ -1439,8 +1459,18 @@ export class GameEngine {
   }
 }
 
-function randInt(min: number, max: number) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+function randInt(rng: () => number, min: number, max: number) {
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+/** Mulberry32 — fast seeded PRNG (public domain) */
+function mulberry32(seed: number): () => number {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
 }
 
 function kneeAngle(lms: NormalizedLandmark[]): number | null {

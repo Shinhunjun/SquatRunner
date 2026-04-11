@@ -17,14 +17,14 @@ export class JunkFood {
   rotation = 0;
   rotSpeed: number;
 
-  constructor(lane: number, startX: number, speed: number) {
+  constructor(lane: number, startX: number, speed: number, type?: JunkType, rotSpeed?: number) {
     this.lane = lane;
     this.x = startX;
     // 레인 위 머리 높이 정도에서 출발
     this.y = LANE_FLOOR_Y[lane] - PLAYER_H + 10;
     this.vx = -speed;
-    this.type = JUNK_TYPES[Math.floor(Math.random() * JUNK_TYPES.length)];
-    this.rotSpeed = (Math.random() - 0.5) * 6;
+    this.type = type ?? JUNK_TYPES[Math.floor(Math.random() * JUNK_TYPES.length)];
+    this.rotSpeed = rotSpeed ?? (Math.random() - 0.5) * 6;
   }
 
   update(dt: number) {

@@ -97,6 +97,9 @@ export default function ParticipantView({ roomCode }: { roomCode: string }) {
 
         socket.onmessage = (e) => {
           const data = JSON.parse(e.data as string) as Record<string, unknown>;
+          if (data.type === 'game_sync') {
+            engine.setSeed(data.seed as number);
+          }
           if (data.type === 'game_state') {
             // 호스트 전체 렌더 상태 수신 → 엔진에 적용
             engine.applyRemoteRenderState(
