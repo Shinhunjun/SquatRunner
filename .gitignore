@@ -45,6 +45,9 @@ python/__pycache__/
 python/*.task
 python/sprites/
 
+# partykit local dev state
+.partykit/
+
 # claude / agents internal
 AGENTS.md
 CLAUDE.md
