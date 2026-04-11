@@ -341,7 +341,7 @@ export class GameEngine {
       p.squatCount          = sp.squatCount;
       p.alive               = sp.alive;
       p.remoteName          = sp.name;
-      const fs = s.playerFallStates[i];
+      const fs = s.playerFallStates?.[i];
       if (fs) {
         p.falling         = fs.falling;
         p.fallY           = fs.fallY;
@@ -356,15 +356,15 @@ export class GameEngine {
     });
 
     // 장애물
-    this.challenges = s.challenges.map(c => new Challenge(c.lane, c.x, c.width));
-    this.meats = s.meats.map(m => {
+    this.challenges = (s.challenges ?? []).map(c => new Challenge(c.lane, c.x, c.width));
+    this.meats = (s.meats ?? []).map(m => {
       const item = new MeatItem(m.lane, m.x);
       item.collected = m.collected;
       return item;
     });
 
     // 정크푸드
-    this.junkFoods = s.junkFoods.map(j => {
+    this.junkFoods = (s.junkFoods ?? []).map(j => {
       const jf = new JunkFood(j.lane, j.x, 0);
       jf.y        = j.y;
       jf.type     = j.type as typeof jf.type;
